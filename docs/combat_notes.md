@@ -4,10 +4,10 @@
 
 - Movement is cell-snapped and quick.
 - Buster is low damage with short cooldown.
-- Cannon is a heavy single shot.
-- Sword controls the adjacent enemy tile.
-- MPPI Dash Strike combines repositioning and attack.
-- Area Control creates short-lived damage zones on the enemy side.
+- LiDAR Sweep is a piercing forward scan beam.
+- Manipulator Blade controls the adjacent enemy tile.
+- MPPI Burst combines fast repositioning and attack.
+- Localization Jam corrupts enemy targeting and creates short-lived jam zones.
 
 ## Implemented Feedback
 

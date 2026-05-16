@@ -5,7 +5,7 @@
 - Target: playable browser prototype in `docs/index.html`.
 - Focus: fast 3x6 realtime battle feel before Godot export pipeline.
 - Controls: WASD/Arrows, Space/Shift dash, J/Z buster, 1-4 chips.
-- Implemented chips: Cannon, Sword, MPPI Dash Strike, Area Control.
+- Implemented chips: LiDAR Sweep, Manipulator Blade, MPPI Burst, Localization Jam.
 - Implemented enemies: charger and turret.
 
 ## Next Combat Questions

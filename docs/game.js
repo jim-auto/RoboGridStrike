@@ -24,6 +24,12 @@ const zones = [];
 const sparks = [];
 const enemies = [];
 const obstacles = [{ col: 2, row: 1, hp: 45, flash: 0 }];
+const chips = [
+  { label: "LiDAR", cooldown: 1.15 },
+  { label: "BLADE", cooldown: 1.45 },
+  { label: "MPPI", cooldown: 2.2 },
+  { label: "JAM", cooldown: 4.0 },
+];
 
 let audioCtx = null;
 let lastTime = performance.now();
@@ -33,6 +39,7 @@ let gameOver = false;
 let wave = 1;
 let spawnTimer = 0;
 let message = "SYSTEM ONLINE";
+let nextEnemyId = 1;
 
 const player = {
   col: 1,
@@ -84,6 +91,7 @@ function armAudio() {
 function spawnEnemy(type, col, row) {
   const p = cellCenter(col, row);
   enemies.push({
+    id: nextEnemyId++,
     type,
     col,
     row,
@@ -151,7 +159,7 @@ function fireBuster() {
   if (player.fireCd > 0 || gameOver) return;
   player.fireCd = 0.18;
   const p = cellCenter(player.col, player.row);
-  shots.push({ x: p.x + 34, y: p.y, vx: 720, damage: 10, team: "player", pierce: 0, r: 7 });
+  shots.push({ x: p.x + 34, y: p.y, vx: 720, damage: 10, team: "player", pierce: 0, r: 7, hit: new Set() });
   sparks.push({ x: p.x + 24, y: p.y, t: 0.08, color: "#46e4ff" });
   playTone(510, 0.035, "square", 0.018);
 }
@@ -159,18 +167,18 @@ function fireBuster() {
 function useChip(i) {
   if (player.chipCd[i] > 0 || gameOver) return;
   if (i === 0) {
-    player.chipCd[i] = 1.15;
+    player.chipCd[i] = chips[i].cooldown;
     const p = cellCenter(player.col, player.row);
-    shots.push({ x: p.x + 36, y: p.y, vx: 980, damage: 32, team: "player", pierce: 0, r: 12 });
-    message = "CANNON";
-    playTone(140, 0.09, "sawtooth", 0.05);
+    shots.push({ x: p.x + 36, y: p.y, vx: 1120, damage: 24, team: "player", pierce: 4, r: 10, beam: true, hit: new Set() });
+    message = "LiDAR SWEEP";
+    playTone(620, 0.08, "sawtooth", 0.042);
   } else if (i === 1) {
-    player.chipCd[i] = 1.45;
+    player.chipCd[i] = chips[i].cooldown;
     slashes.push({ col: player.col + 1, row: player.row, t: 0.15, damage: 42 });
-    message = "KINETIC SWORD";
+    message = "MANIPULATOR BLADE";
     playTone(760, 0.06, "triangle", 0.045);
   } else if (i === 2) {
-    player.chipCd[i] = 2.2;
+    player.chipCd[i] = chips[i].cooldown;
     player.dash = 0.16;
     const oldCol = player.col;
     player.col = Math.min(2, player.col + 2);
@@ -180,11 +188,17 @@ function useChip(i) {
     shake = 7;
     playTone(360, 0.07, "square", 0.035);
   } else if (i === 3) {
-    player.chipCd[i] = 4.0;
-    zones.push({ col: 3, row: player.row, t: 2.6, tick: 0, damage: 8 });
-    zones.push({ col: 4, row: player.row, t: 2.6, tick: 0.12, damage: 8 });
-    message = "AREA CONTROL";
-    playTone(250, 0.12, "sine", 0.04);
+    player.chipCd[i] = chips[i].cooldown;
+    for (const enemy of enemies) {
+      enemy.dirJam = 3.0;
+      enemy.cd += 0.45 + Math.random() * 0.35;
+      enemy.flash = 0.2;
+      sparks.push({ x: enemy.px, y: enemy.py, t: 0.32, color: "#c77dff" });
+    }
+    zones.push({ col: 3, row: player.row, t: 2.2, tick: 0, damage: 5, jam: true });
+    zones.push({ col: 4, row: player.row, t: 2.2, tick: 0.1, damage: 5, jam: true });
+    message = "LOCALIZATION JAM";
+    playTone(190, 0.14, "sine", 0.044);
   }
 }
 
@@ -240,7 +254,8 @@ function updateEnemies(dt) {
     if (enemy.type === "turret" && enemy.cd <= 0) {
       enemy.cd = 1.25 + Math.random() * 0.5;
       const p = cellCenter(enemy.col, enemy.row);
-      shots.push({ x: p.x - 36, y: p.y, vx: -560, damage: 12, team: "enemy", pierce: 0, r: 8 });
+      const yDrift = enemy.dirJam > 0 ? (Math.floor(Math.random() * 3) - 1) * grid.cell * 0.55 : 0;
+      shots.push({ x: p.x - 36, y: p.y + yDrift, vx: -560, damage: 12, team: "enemy", pierce: 0, r: 8, hit: new Set() });
       playTone(300, 0.04, "square", 0.018);
     }
 
@@ -257,15 +272,20 @@ function updateProjectiles(dt) {
     if (s.team === "player") {
       for (const o of obstacles) {
         const c = cellCenter(o.col, o.row);
-        if (o.hp > 0 && Math.abs(s.x - c.x) < 42 && Math.abs(s.y - c.y) < 42) {
+        const key = `o:${o.col}:${o.row}`;
+        if (o.hp > 0 && !s.hit.has(key) && Math.abs(s.x - c.x) < 42 && Math.abs(s.y - c.y) < 42) {
+          s.hit.add(key);
           o.hp -= s.damage;
           o.flash = 0.12;
-          s.dead = true;
+          if (s.pierce <= 0) s.dead = true;
+          else s.pierce -= 1;
           shake = Math.max(shake, 5);
         }
       }
       for (const enemy of enemies) {
-        if (Math.abs(s.x - enemy.px) < 38 && Math.abs(s.y - enemy.py) < 38) {
+        const key = `e:${enemy.id}`;
+        if (!s.hit.has(key) && Math.abs(s.x - enemy.px) < 38 && Math.abs(s.y - enemy.py) < 38) {
+          s.hit.add(key);
           damageEnemy(enemy, s.damage);
           if (s.pierce <= 0) s.dead = true;
           else s.pierce -= 1;
@@ -302,7 +322,10 @@ function updateAreaEffects(dt) {
     if (zone.tick <= 0) {
       zone.tick = 0.28;
       for (const enemy of enemies) {
-        if (enemy.col === zone.col && enemy.row === zone.row) damageEnemy(enemy, zone.damage);
+        if (enemy.col === zone.col && enemy.row === zone.row) {
+          if (zone.jam) enemy.dirJam = Math.max(enemy.dirJam, 1.1);
+          damageEnemy(enemy, zone.damage);
+        }
       }
     }
   }
@@ -406,8 +429,8 @@ function draw() {
 
   for (const zone of zones) {
     const c = cellCenter(zone.col, zone.row);
-    ctx.fillStyle = "rgba(125, 255, 145, 0.22)";
-    ctx.strokeStyle = "rgba(125, 255, 145, 0.8)";
+    ctx.fillStyle = zone.jam ? "rgba(199, 125, 255, 0.18)" : "rgba(125, 255, 145, 0.22)";
+    ctx.strokeStyle = zone.jam ? "rgba(199, 125, 255, 0.82)" : "rgba(125, 255, 145, 0.8)";
     ctx.lineWidth = 4;
     ctx.fillRect(c.x - 56, c.y - 56, 112, 112);
     ctx.strokeRect(c.x - 50, c.y - 50, 100, 100);
@@ -438,6 +461,9 @@ function draw() {
     ctx.fillStyle = s.team === "player" ? "#46e4ff" : "#ff5b6e";
     ctx.shadowBlur = 18;
     ctx.shadowColor = ctx.fillStyle;
+    if (s.beam) {
+      ctx.fillRect(s.x - 54, s.y - 3, 108, 6);
+    }
     ctx.beginPath();
     ctx.arc(s.x, s.y, s.r, 0, Math.PI * 2);
     ctx.fill();
@@ -446,6 +472,13 @@ function draw() {
 
   for (const enemy of enemies) {
     drawRobot(enemy.px, enemy.py, enemy.type === "charger" ? "#6b303b" : "#7c6635", true, enemy.flash);
+    if (enemy.dirJam > 0) {
+      ctx.strokeStyle = "#c77dff";
+      ctx.lineWidth = 2;
+      ctx.setLineDash([5, 5]);
+      ctx.strokeRect(enemy.px - 34, enemy.py - 34, 68, 68);
+      ctx.setLineDash([]);
+    }
     ctx.fillStyle = "#22070a";
     ctx.fillRect(enemy.px - 28, enemy.py - 43, 56, 6);
     ctx.fillStyle = "#ff5b6e";
@@ -476,7 +509,6 @@ function drawOverlay() {
   ctx.font = "700 18px system-ui";
   ctx.fillText(message, 42, 50);
 
-  const labels = ["CANNON", "SWORD", "DASH", "AREA"];
   for (let i = 0; i < 4; i++) {
     const x = 430 + i * 122;
     ctx.fillStyle = "#0c171c";
@@ -485,10 +517,10 @@ function drawOverlay() {
     ctx.strokeRect(x, 26, 104, 30);
     ctx.fillStyle = player.chipCd[i] > 0 ? "#78919a" : "#e8f7f8";
     ctx.font = "700 12px system-ui";
-    ctx.fillText(`${i + 1} ${labels[i]}`, x + 9, 46);
+    ctx.fillText(`${i + 1} ${chips[i].label}`, x + 9, 46);
     if (player.chipCd[i] > 0) {
       ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(x, 26, 104 * Math.min(1, player.chipCd[i] / [1.15, 1.45, 2.2, 4][i]), 30);
+      ctx.fillRect(x, 26, 104 * Math.min(1, player.chipCd[i] / chips[i].cooldown), 30);
     }
   }
 
