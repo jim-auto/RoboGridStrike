@@ -21,13 +21,14 @@ const pressed = new Set();
 const shots = [];
 const slashes = [];
 const zones = [];
+const clones = [];
 const sparks = [];
 const enemies = [];
 const obstacles = [{ col: 2, row: 1, hp: 45, flash: 0 }];
 const chips = [
   { label: "LiDAR", cooldown: 1.15 },
   { label: "BLADE", cooldown: 1.45 },
-  { label: "MPPI", cooldown: 2.2 },
+  { label: "CLONE", cooldown: 2.2 },
   { label: "JAM", cooldown: 4.0 },
 ];
 
@@ -155,6 +156,12 @@ function hurtPlayer(amount) {
   }
 }
 
+function addClone(col, row, duration = 1.0) {
+  if (col < 0 || col > 2 || row < 0 || row > 2 || isBlocked(col, row)) return;
+  const p = cellCenter(col, row);
+  clones.push({ col, row, px: p.x, py: p.y, t: duration, max: duration });
+}
+
 function fireBuster() {
   if (player.fireCd > 0 || gameOver) return;
   player.fireCd = 0.18;
@@ -180,11 +187,16 @@ function useChip(i) {
   } else if (i === 2) {
     player.chipCd[i] = chips[i].cooldown;
     player.dash = 0.16;
+    const startCol = player.col;
+    const startRow = player.row;
+    addClone(startCol, startRow, 1.1);
     const oldCol = player.col;
     player.col = Math.min(2, player.col + 2);
     if (isBlocked(player.col, player.row)) player.col = oldCol;
+    addClone(player.col, Math.max(0, player.row - 1), 0.9);
+    addClone(player.col, Math.min(2, player.row + 1), 0.9);
     slashes.push({ col: player.col + 1, row: player.row, t: 0.16, damage: 36 });
-    message = "MPPI DASH STRIKE";
+    message = "VECTOR CLONE";
     shake = 7;
     playTone(360, 0.07, "square", 0.035);
   } else if (i === 3) {
@@ -291,9 +303,22 @@ function updateProjectiles(dt) {
           else s.pierce -= 1;
         }
       }
-    } else if (Math.abs(s.x - player.px) < 34 && Math.abs(s.y - player.py) < 34) {
-      hurtPlayer(s.damage);
-      s.dead = true;
+    } else {
+      let intercepted = false;
+      for (const clone of clones) {
+        if (Math.abs(s.x - clone.px) < 34 && Math.abs(s.y - clone.py) < 34) {
+          clone.t = Math.min(clone.t, 0.08);
+          sparks.push({ x: clone.px, y: clone.py, t: 0.2, color: "#7dff91" });
+          s.dead = true;
+          intercepted = true;
+          playTone(420, 0.035, "triangle", 0.02);
+          break;
+        }
+      }
+      if (!intercepted && Math.abs(s.x - player.px) < 34 && Math.abs(s.y - player.py) < 34) {
+        hurtPlayer(s.damage);
+        s.dead = true;
+      }
     }
   }
 
@@ -303,6 +328,11 @@ function updateProjectiles(dt) {
 }
 
 function updateAreaEffects(dt) {
+  for (const clone of clones) clone.t -= dt;
+  for (let i = clones.length - 1; i >= 0; i--) {
+    if (clones[i].t <= 0) clones.splice(i, 1);
+  }
+
   for (const slash of slashes) {
     slash.t -= dt;
     for (const enemy of enemies) {
@@ -485,6 +515,16 @@ function draw() {
     ctx.fillRect(enemy.px - 28, enemy.py - 43, 56 * Math.max(0, enemy.hp / enemy.maxHp), 6);
   }
 
+  for (const clone of clones) {
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, clone.t / clone.max) * 0.55;
+    drawRobot(clone.px, clone.py, "#2b8f78", false, 0);
+    ctx.strokeStyle = "#7dff91";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(clone.px - 32, clone.py - 35, 64, 70);
+    ctx.restore();
+  }
+
   if (player.invuln <= 0 || Math.floor(performance.now() / 70) % 2 === 0) {
     drawRobot(player.px, player.py, player.dash > 0 ? "#7dff91" : "#1d5d6e", false, 0);
   }
@@ -560,6 +600,7 @@ function restart() {
   shots.length = 0;
   slashes.length = 0;
   zones.length = 0;
+  clones.length = 0;
   sparks.length = 0;
   enemies.length = 0;
   obstacles.splice(0, obstacles.length, { col: 2, row: 1, hp: 45, flash: 0 });

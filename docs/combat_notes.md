@@ -6,7 +6,7 @@
 - Buster is low damage with short cooldown.
 - LiDAR Sweep is a piercing forward scan beam.
 - Manipulator Blade controls the adjacent enemy tile.
-- MPPI Burst combines fast repositioning and attack.
+- Vector Clone combines fast repositioning, attack, and decoy afterimages.
 - Localization Jam corrupts enemy targeting and creates short-lived jam zones.
 
 ## Implemented Feedback

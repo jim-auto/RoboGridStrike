@@ -20,5 +20,5 @@ The game will be served from the repository GitHub Pages URL.
 - Move: `WASD` / Arrow keys
 - Dash: `Space` / `Shift`
 - Buster: `J` / `Z`
-- Chips: `1` LiDAR Sweep, `2` Manipulator Blade, `3` MPPI Burst, `4` Localization Jam
+- Chips: `1` LiDAR Sweep, `2` Manipulator Blade, `3` Vector Clone, `4` Localization Jam
 - Restart: `R`
