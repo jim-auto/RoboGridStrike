@@ -4,6 +4,7 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const hpEl = document.getElementById("hp");
 const waveEl = document.getElementById("wave");
+const touchButtons = document.querySelectorAll("[data-action]");
 
 const W = canvas.width;
 const H = canvas.height;
@@ -129,6 +130,13 @@ function tryMove(dx, dy) {
   player.row = nextRow;
 }
 
+function dashPlayer() {
+  player.dash = 0.12;
+  tryMove(player.facing, 0);
+  shake = Math.max(shake, 4);
+  playTone(220, 0.035, "triangle", 0.016);
+}
+
 function damageEnemy(enemy, amount, knock = 0) {
   enemy.hp -= amount;
   enemy.flash = 0.12;
@@ -231,10 +239,7 @@ function updatePlayer(dt) {
   if (dx || dy) tryMove(dx, dy);
 
   if (pressed.has(" ") || pressed.has("shift")) {
-    player.dash = 0.12;
-    tryMove(player.facing, 0);
-    shake = Math.max(shake, 4);
-    playTone(220, 0.035, "triangle", 0.016);
+    dashPlayer();
   }
   if (keys.has("j") || keys.has("z")) fireBuster();
   for (let i = 0; i < 4; i++) {
@@ -692,6 +697,47 @@ window.addEventListener("keydown", (event) => {
 window.addEventListener("keyup", (event) => {
   keys.delete(event.key.toLowerCase());
 });
+
+function performTouchAction(action) {
+  armAudio();
+  if (gameOver && action !== "restart") return;
+  if (action === "up") tryMove(0, -1);
+  if (action === "down") tryMove(0, 1);
+  if (action === "left") tryMove(-1, 0);
+  if (action === "right") tryMove(1, 0);
+  if (action === "dash") dashPlayer();
+  if (action === "buster") fireBuster();
+  if (action === "chip0") useChip(0);
+  if (action === "chip1") useChip(1);
+  if (action === "chip2") useChip(2);
+  if (action === "chip3") useChip(3);
+  if (action === "restart") restart();
+}
+
+for (const button of touchButtons) {
+  let repeat = null;
+  const action = button.dataset.action;
+  const interval = button.dataset.hold === "true" ? 100 : 170;
+  const start = (event) => {
+    event.preventDefault();
+    button.classList.add("is-down");
+    performTouchAction(action);
+    if (repeat) clearInterval(repeat);
+    if (["up", "down", "left", "right", "buster"].includes(action)) {
+      repeat = setInterval(() => performTouchAction(action), interval);
+    }
+  };
+  const stop = (event) => {
+    event.preventDefault();
+    button.classList.remove("is-down");
+    if (repeat) clearInterval(repeat);
+    repeat = null;
+  };
+  button.addEventListener("pointerdown", start);
+  button.addEventListener("pointerup", stop);
+  button.addEventListener("pointercancel", stop);
+  button.addEventListener("pointerleave", stop);
+}
 
 init();
 requestAnimationFrame(loop);

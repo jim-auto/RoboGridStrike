@@ -16,3 +16,4 @@
 - Basic WebAudio tones for attack and damage feedback.
 - Enemy HP bars and player invulnerability flicker.
 - Enemy windups show charge danger tiles and turret firing lines before attacks.
+- Mobile touch controls support movement, dash, buster, chips, and reboot.

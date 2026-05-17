@@ -22,3 +22,5 @@ The game will be served from the repository GitHub Pages URL.
 - Buster: `J` / `Z`
 - Chips: `1` LiDAR Sweep, `2` Manipulator Blade, `3` Vector Clone, `4` Localization Jam
 - Restart: `R`
+
+Mobile browsers also show on-screen movement, attack, chip, and reboot buttons.

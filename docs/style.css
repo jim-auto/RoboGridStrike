@@ -37,7 +37,8 @@ body {
 }
 
 .hud,
-.controls {
+.controls,
+.touch-controls {
   border: 1px solid rgba(142, 245, 255, 0.18);
   background: rgba(8, 18, 22, 0.72);
   backdrop-filter: blur(14px);
@@ -90,6 +91,65 @@ canvas {
   box-shadow: 0 20px 70px rgba(0, 0, 0, 0.35);
 }
 
+.touch-controls {
+  display: none;
+  gap: 10px;
+  padding: 10px;
+  touch-action: none;
+}
+
+.touch-pad {
+  display: grid;
+  grid-template-columns: repeat(3, 56px);
+  grid-template-rows: repeat(3, 44px);
+  gap: 6px;
+}
+
+.touch-pad button:nth-child(1) {
+  grid-column: 2;
+  grid-row: 1;
+}
+
+.touch-pad button:nth-child(2) {
+  grid-column: 1;
+  grid-row: 2;
+}
+
+.touch-pad button:nth-child(3) {
+  grid-column: 3;
+  grid-row: 2;
+}
+
+.touch-pad button:nth-child(4) {
+  grid-column: 2;
+  grid-row: 3;
+}
+
+.touch-actions {
+  flex: 1;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.touch-controls button {
+  min-height: 44px;
+  border: 1px solid rgba(70, 228, 255, 0.36);
+  background: #0d1a20;
+  color: var(--text);
+  font: 800 12px/1 system-ui;
+  letter-spacing: 0;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.touch-controls button:active,
+.touch-controls button.is-down {
+  border-color: var(--green);
+  background: #143027;
+  color: var(--green);
+}
+
 .controls {
   display: grid;
   grid-template-columns: repeat(5, minmax(0, 1fr));
@@ -134,5 +194,24 @@ canvas {
 
   .controls {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .touch-controls {
+    display: flex;
+    align-items: stretch;
+  }
+}
+
+@media (max-width: 560px) {
+  .touch-controls {
+    flex-direction: column;
+  }
+
+  .touch-pad {
+    align-self: center;
+  }
+
+  .touch-actions {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
