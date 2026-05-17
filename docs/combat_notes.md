@@ -15,3 +15,4 @@
 - Screen shake on heavy impacts and damage.
 - Basic WebAudio tones for attack and damage feedback.
 - Enemy HP bars and player invulnerability flicker.
+- Enemy windups show charge danger tiles and turret firing lines before attacks.

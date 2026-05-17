@@ -101,6 +101,8 @@ function spawnEnemy(type, col, row) {
     hp: type === "charger" ? 75 : 60,
     maxHp: type === "charger" ? 75 : 60,
     cd: type === "charger" ? 0.9 : 1.4,
+    windup: 0,
+    action: null,
     stun: 0,
     flash: 0,
     dirJam: 0,
@@ -254,21 +256,48 @@ function updateEnemies(dt) {
     enemy.dirJam = Math.max(0, enemy.dirJam - dt);
     if (enemy.stun > 0) continue;
 
-    if (enemy.type === "charger" && enemy.cd <= 0) {
-      enemy.cd = 1.0 + Math.random() * 0.45;
-      const rowDelta = enemy.dirJam > 0 ? Math.sign(Math.random() - 0.5) : Math.sign(player.row - enemy.row);
-      if (rowDelta && Math.random() < 0.55) enemy.row = Math.max(0, Math.min(2, enemy.row + rowDelta));
-      else enemy.col = Math.max(3, enemy.col - 1);
-      if (enemy.col === player.col && enemy.row === player.row) hurtPlayer(18);
-      if (enemy.col <= 2) enemy.col = 4;
-    }
+    if (enemy.windup > 0) {
+      enemy.windup -= dt;
+      if (enemy.windup <= 0 && enemy.action) {
+        if (enemy.action.type === "charge") {
+          enemy.col = enemy.action.col;
+          enemy.row = enemy.action.row;
+          if (enemy.col === player.col && enemy.row === player.row) hurtPlayer(18);
+          if (enemy.col <= 2) enemy.col = 4;
+          enemy.cd = 1.0 + Math.random() * 0.45;
+          shake = Math.max(shake, 5);
+          playTone(120, 0.045, "sawtooth", 0.025);
+        }
+        if (enemy.action.type === "shoot") {
+          const p = cellCenter(enemy.col, enemy.row);
+          shots.push({ x: p.x - 36, y: enemy.action.y, vx: -560, damage: 12, team: "enemy", pierce: 0, r: 8, hit: new Set() });
+          enemy.cd = 1.25 + Math.random() * 0.5;
+          playTone(300, 0.04, "square", 0.018);
+        }
+        enemy.action = null;
+      }
+    } else {
+      if (enemy.type === "charger" && enemy.cd <= 0) {
+        const rowDelta = enemy.dirJam > 0 ? Math.sign(Math.random() - 0.5) : Math.sign(player.row - enemy.row);
+        const willShift = rowDelta && Math.random() < 0.55;
+        enemy.action = {
+          type: "charge",
+          col: willShift ? enemy.col : enemy.col - 1,
+          row: willShift ? Math.max(0, Math.min(2, enemy.row + rowDelta)) : enemy.row,
+        };
+        enemy.windup = 0.32;
+        enemy.cd = 999;
+        playTone(180, 0.035, "triangle", 0.014);
+      }
 
-    if (enemy.type === "turret" && enemy.cd <= 0) {
-      enemy.cd = 1.25 + Math.random() * 0.5;
-      const p = cellCenter(enemy.col, enemy.row);
-      const yDrift = enemy.dirJam > 0 ? (Math.floor(Math.random() * 3) - 1) * grid.cell * 0.55 : 0;
-      shots.push({ x: p.x - 36, y: p.y + yDrift, vx: -560, damage: 12, team: "enemy", pierce: 0, r: 8, hit: new Set() });
-      playTone(300, 0.04, "square", 0.018);
+      if (enemy.type === "turret" && enemy.cd <= 0) {
+        const p = cellCenter(enemy.col, enemy.row);
+        const yDrift = enemy.dirJam > 0 ? (Math.floor(Math.random() * 3) - 1) * grid.cell * 0.55 : 0;
+        enemy.action = { type: "shoot", y: p.y + yDrift };
+        enemy.windup = 0.42;
+        enemy.cd = 999;
+        playTone(240, 0.035, "sine", 0.014);
+      }
     }
 
     const target = cellCenter(enemy.col, enemy.row);
@@ -443,6 +472,44 @@ function drawRobot(x, y, color, enemy = false, flash = 0) {
   ctx.restore();
 }
 
+function drawEnemyTelegraphs() {
+  for (const enemy of enemies) {
+    if (!enemy.action || enemy.windup <= 0) continue;
+    const pulse = 0.45 + Math.sin(performance.now() / 38) * 0.18;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0.2, pulse);
+    if (enemy.action.type === "charge") {
+      const c = cellCenter(enemy.action.col, enemy.action.row);
+      ctx.fillStyle = "rgba(255, 91, 110, 0.24)";
+      ctx.strokeStyle = "#ff5b6e";
+      ctx.lineWidth = 5;
+      ctx.fillRect(c.x - 56, c.y - 56, 112, 112);
+      ctx.strokeRect(c.x - 50, c.y - 50, 100, 100);
+      ctx.beginPath();
+      ctx.moveTo(enemy.px - 28, enemy.py);
+      ctx.lineTo(c.x + 28, c.y);
+      ctx.stroke();
+    }
+    if (enemy.action.type === "shoot") {
+      ctx.strokeStyle = "#ff5b6e";
+      ctx.lineWidth = 5;
+      ctx.beginPath();
+      ctx.moveTo(grid.x, enemy.action.y);
+      ctx.lineTo(enemy.px - 38, enemy.action.y);
+      ctx.stroke();
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "#ffd35a";
+      ctx.beginPath();
+      ctx.moveTo(grid.x, enemy.action.y - 9);
+      ctx.lineTo(enemy.px - 38, enemy.action.y - 9);
+      ctx.moveTo(grid.x, enemy.action.y + 9);
+      ctx.lineTo(enemy.px - 38, enemy.action.y + 9);
+      ctx.stroke();
+    }
+    ctx.restore();
+  }
+}
+
 function draw() {
   ctx.save();
   ctx.clearRect(0, 0, W, H);
@@ -476,6 +543,8 @@ function draw() {
     ctx.strokeRect(c.x - 30, c.y - 30, 60, 60);
     o.flash = Math.max(0, o.flash - 1 / 60);
   }
+
+  drawEnemyTelegraphs();
 
   for (const slash of slashes) {
     const c = cellCenter(slash.col, slash.row);
