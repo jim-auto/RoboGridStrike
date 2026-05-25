@@ -9,12 +9,12 @@ const touchButtons = document.querySelectorAll("[data-action]");
 const W = canvas.width;
 const H = canvas.height;
 const grid = {
-  x: 132,
-  y: 102,
+  x: 267,
+  y: 82,
   cols: 6,
-  rows: 3,
-  cell: 112,
-  gap: 8,
+  rows: 6,
+  cell: 66,
+  gap: 6,
 };
 
 const keys = new Set();
@@ -25,10 +25,13 @@ const zones = [];
 const clones = [];
 const sparks = [];
 const enemies = [];
-const obstacles = [{ col: 2, row: 1, hp: 45, flash: 0 }];
+const obstacles = [
+  { col: 2, row: 2, hp: 45, flash: 0 },
+  { col: 3, row: 4, hp: 45, flash: 0 },
+];
 const chips = [
   { label: "LiDAR", cooldown: 1.15 },
-  { label: "BLADE", cooldown: 1.45 },
+  { label: "SNARE", cooldown: 1.65 },
   { label: "CLONE", cooldown: 2.2 },
   { label: "JAM", cooldown: 4.0 },
 ];
@@ -45,14 +48,15 @@ let nextEnemyId = 1;
 
 const player = {
   col: 1,
-  row: 1,
+  row: 3,
   px: 0,
   py: 0,
   hp: 100,
   maxHp: 100,
   invuln: 0,
   dash: 0,
-  fireCd: 0,
+  gunCd: 0,
+  swordCd: 0,
   chipCd: [0, 0, 0, 0],
   facing: 1,
 };
@@ -69,8 +73,8 @@ function init() {
   player.px = p.x;
   player.py = p.y;
   enemies.length = 0;
-  spawnEnemy("charger", 4, 0);
-  spawnEnemy("turret", 5, 2);
+  spawnEnemy("charger", 4, 1);
+  spawnEnemy("turret", 5, 4);
 }
 
 function playTone(freq, dur = 0.04, type = "square", gain = 0.025) {
@@ -107,16 +111,29 @@ function spawnEnemy(type, col, row) {
     stun: 0,
     flash: 0,
     dirJam: 0,
+    facing: -1,
   });
+}
+
+function inBounds(col, row) {
+  return col >= 0 && col < grid.cols && row >= 0 && row < grid.rows;
 }
 
 function isBlocked(col, row) {
   return obstacles.some((o) => o.hp > 0 && o.col === col && o.row === row);
 }
 
+function isEnemyCell(col, row, ignoreId = null) {
+  return enemies.some((enemy) => enemy.hp > 0 && enemy.id !== ignoreId && enemy.col === col && enemy.row === row);
+}
+
+function isPlayerCell(col, row) {
+  return player.col === col && player.row === row;
+}
+
 function clampPlayer() {
-  player.col = Math.max(0, Math.min(2, player.col));
-  player.row = Math.max(0, Math.min(2, player.row));
+  player.col = Math.max(0, Math.min(grid.cols - 1, player.col));
+  player.row = Math.max(0, Math.min(grid.rows - 1, player.row));
 }
 
 function tryMove(dx, dy) {
@@ -124,8 +141,9 @@ function tryMove(dx, dy) {
   if (dx < 0) player.facing = -1;
   const nextCol = player.col + dx;
   const nextRow = player.row + dy;
-  if (nextCol < 0 || nextCol > 2 || nextRow < 0 || nextRow > 2) return;
+  if (!inBounds(nextCol, nextRow)) return;
   if (isBlocked(nextCol, nextRow)) return;
+  if (isEnemyCell(nextCol, nextRow)) return;
   player.col = nextCol;
   player.row = nextRow;
 }
@@ -141,7 +159,10 @@ function damageEnemy(enemy, amount, knock = 0) {
   enemy.hp -= amount;
   enemy.flash = 0.12;
   enemy.stun = Math.max(enemy.stun, 0.08);
-  enemy.col = Math.max(3, Math.min(5, enemy.col + knock));
+  const nextCol = Math.max(0, Math.min(grid.cols - 1, enemy.col + knock));
+  if (knock && !isBlocked(nextCol, enemy.row) && !isEnemyCell(nextCol, enemy.row, enemy.id) && !isPlayerCell(nextCol, enemy.row)) {
+    enemy.col = nextCol;
+  }
   const p = cellCenter(enemy.col, enemy.row);
   enemy.px = p.x;
   enemy.py = p.y;
@@ -167,18 +188,37 @@ function hurtPlayer(amount) {
 }
 
 function addClone(col, row, duration = 1.0) {
-  if (col < 0 || col > 2 || row < 0 || row > 2 || isBlocked(col, row)) return;
+  if (!inBounds(col, row) || isBlocked(col, row)) return;
   const p = cellCenter(col, row);
-  clones.push({ col, row, px: p.x, py: p.y, t: duration, max: duration });
+  clones.push({ col, row, px: p.x, py: p.y, t: duration, max: duration, facing: player.facing });
 }
 
-function fireBuster() {
-  if (player.fireCd > 0 || gameOver) return;
-  player.fireCd = 0.18;
+function turnPlayer(dir) {
+  player.facing = dir;
+  message = dir < 0 ? "FACING LEFT" : "FACING RIGHT";
+}
+
+function flipPlayer() {
+  turnPlayer(player.facing * -1);
+}
+
+function fireGun() {
+  if (player.gunCd > 0 || gameOver) return;
+  player.gunCd = 0.18;
   const p = cellCenter(player.col, player.row);
-  shots.push({ x: p.x + 34, y: p.y, vx: 720, damage: 10, team: "player", pierce: 0, r: 7, hit: new Set() });
-  sparks.push({ x: p.x + 24, y: p.y, t: 0.08, color: "#46e4ff" });
+  shots.push({ x: p.x + player.facing * 34, y: p.y, vx: player.facing * 720, damage: 10, team: "player", pierce: 0, r: 7, hit: new Set() });
+  sparks.push({ x: p.x + player.facing * 24, y: p.y, t: 0.08, color: "#46e4ff" });
   playTone(510, 0.035, "square", 0.018);
+}
+
+function swingSword() {
+  if (player.swordCd > 0 || gameOver) return;
+  const col = player.col + player.facing;
+  if (!inBounds(col, player.row)) return;
+  player.swordCd = 0.38;
+  slashes.push({ col, row: player.row, t: 0.16, damage: 34, knock: player.facing });
+  message = "EDGE STRIKE";
+  playTone(760, 0.06, "triangle", 0.045);
 }
 
 function useChip(i) {
@@ -186,14 +226,17 @@ function useChip(i) {
   if (i === 0) {
     player.chipCd[i] = chips[i].cooldown;
     const p = cellCenter(player.col, player.row);
-    shots.push({ x: p.x + 36, y: p.y, vx: 1120, damage: 24, team: "player", pierce: 4, r: 10, beam: true, hit: new Set() });
+    shots.push({ x: p.x + player.facing * 36, y: p.y, vx: player.facing * 1120, damage: 24, team: "player", pierce: 4, r: 10, beam: true, hit: new Set() });
     message = "LiDAR SWEEP";
     playTone(620, 0.08, "sawtooth", 0.042);
   } else if (i === 1) {
     player.chipCd[i] = chips[i].cooldown;
-    slashes.push({ col: player.col + 1, row: player.row, t: 0.15, damage: 42 });
-    message = "MANIPULATOR BLADE";
-    playTone(760, 0.06, "triangle", 0.045);
+    const col = player.col + player.facing;
+    for (let row = player.row - 1; row <= player.row + 1; row++) {
+      if (inBounds(col, row)) zones.push({ col, row, t: 1.2, tick: row === player.row ? 0 : 0.08, damage: 9, jam: false });
+    }
+    message = "ARC SNARE";
+    playTone(420, 0.09, "sine", 0.038);
   } else if (i === 2) {
     player.chipCd[i] = chips[i].cooldown;
     player.dash = 0.16;
@@ -201,11 +244,13 @@ function useChip(i) {
     const startRow = player.row;
     addClone(startCol, startRow, 1.1);
     const oldCol = player.col;
-    player.col = Math.min(2, player.col + 2);
-    if (isBlocked(player.col, player.row)) player.col = oldCol;
+    player.col = Math.max(0, Math.min(grid.cols - 1, player.col + player.facing * 2));
+    if (isBlocked(player.col, player.row) || isEnemyCell(player.col, player.row)) player.col = oldCol;
     addClone(player.col, Math.max(0, player.row - 1), 0.9);
-    addClone(player.col, Math.min(2, player.row + 1), 0.9);
-    slashes.push({ col: player.col + 1, row: player.row, t: 0.16, damage: 36 });
+    addClone(player.col, Math.min(grid.rows - 1, player.row + 1), 0.9);
+    if (inBounds(player.col + player.facing, player.row)) {
+      slashes.push({ col: player.col + player.facing, row: player.row, t: 0.16, damage: 36, knock: player.facing });
+    }
     message = "VECTOR CLONE";
     shake = 7;
     playTone(360, 0.07, "square", 0.035);
@@ -217,18 +262,25 @@ function useChip(i) {
       enemy.flash = 0.2;
       sparks.push({ x: enemy.px, y: enemy.py, t: 0.32, color: "#c77dff" });
     }
-    zones.push({ col: 3, row: player.row, t: 2.2, tick: 0, damage: 5, jam: true });
-    zones.push({ col: 4, row: player.row, t: 2.2, tick: 0.1, damage: 5, jam: true });
+    for (let step = 1; step <= 2; step++) {
+      const col = player.col + player.facing * step;
+      if (inBounds(col, player.row)) zones.push({ col, row: player.row, t: 2.2, tick: step === 1 ? 0 : 0.1, damage: 5, jam: true });
+    }
     message = "LOCALIZATION JAM";
     playTone(190, 0.14, "sine", 0.044);
   }
 }
 
 function updatePlayer(dt) {
-  player.fireCd = Math.max(0, player.fireCd - dt);
+  player.gunCd = Math.max(0, player.gunCd - dt);
+  player.swordCd = Math.max(0, player.swordCd - dt);
   player.invuln = Math.max(0, player.invuln - dt);
   player.dash = Math.max(0, player.dash - dt);
   player.chipCd = player.chipCd.map((v) => Math.max(0, v - dt));
+
+  if (pressed.has("q")) turnPlayer(-1);
+  if (pressed.has("e")) turnPlayer(1);
+  if (pressed.has("c") || pressed.has("tab")) flipPlayer();
 
   let dx = 0;
   let dy = 0;
@@ -241,7 +293,8 @@ function updatePlayer(dt) {
   if (pressed.has(" ") || pressed.has("shift")) {
     dashPlayer();
   }
-  if (keys.has("j") || keys.has("z")) fireBuster();
+  if (keys.has("j") || keys.has("z")) fireGun();
+  if (pressed.has("k") || pressed.has("x")) swingSword();
   for (let i = 0; i < 4; i++) {
     if (pressed.has(String(i + 1))) useChip(i);
   }
@@ -265,17 +318,19 @@ function updateEnemies(dt) {
       enemy.windup -= dt;
       if (enemy.windup <= 0 && enemy.action) {
         if (enemy.action.type === "charge") {
-          enemy.col = enemy.action.col;
-          enemy.row = enemy.action.row;
-          if (enemy.col === player.col && enemy.row === player.row) hurtPlayer(18);
-          if (enemy.col <= 2) enemy.col = 4;
+          if (enemy.action.col === player.col && enemy.action.row === player.row) {
+            hurtPlayer(18);
+          } else if (inBounds(enemy.action.col, enemy.action.row) && !isBlocked(enemy.action.col, enemy.action.row) && !isEnemyCell(enemy.action.col, enemy.action.row, enemy.id)) {
+            enemy.col = enemy.action.col;
+            enemy.row = enemy.action.row;
+          }
           enemy.cd = 1.0 + Math.random() * 0.45;
           shake = Math.max(shake, 5);
           playTone(120, 0.045, "sawtooth", 0.025);
         }
         if (enemy.action.type === "shoot") {
           const p = cellCenter(enemy.col, enemy.row);
-          shots.push({ x: p.x - 36, y: enemy.action.y, vx: -560, damage: 12, team: "enemy", pierce: 0, r: 8, hit: new Set() });
+          shots.push({ x: p.x + enemy.action.dir * 36, y: enemy.action.y, vx: enemy.action.dir * 560, damage: 12, team: "enemy", pierce: 0, r: 8, hit: new Set() });
           enemy.cd = 1.25 + Math.random() * 0.5;
           playTone(300, 0.04, "square", 0.018);
         }
@@ -283,12 +338,16 @@ function updateEnemies(dt) {
       }
     } else {
       if (enemy.type === "charger" && enemy.cd <= 0) {
+        const colDelta = enemy.dirJam > 0 ? Math.sign(Math.random() - 0.5) : Math.sign(player.col - enemy.col);
         const rowDelta = enemy.dirJam > 0 ? Math.sign(Math.random() - 0.5) : Math.sign(player.row - enemy.row);
-        const willShift = rowDelta && Math.random() < 0.55;
+        const useHorizontal = Math.abs(player.col - enemy.col) >= Math.abs(player.row - enemy.row);
+        const dx = useHorizontal && colDelta ? colDelta : 0;
+        const dy = !dx && rowDelta ? rowDelta : 0;
+        enemy.facing = dx || (player.col < enemy.col ? -1 : 1);
         enemy.action = {
           type: "charge",
-          col: willShift ? enemy.col : enemy.col - 1,
-          row: willShift ? Math.max(0, Math.min(2, enemy.row + rowDelta)) : enemy.row,
+          col: Math.max(0, Math.min(grid.cols - 1, enemy.col + dx)),
+          row: Math.max(0, Math.min(grid.rows - 1, enemy.row + dy)),
         };
         enemy.windup = 0.32;
         enemy.cd = 999;
@@ -297,8 +356,11 @@ function updateEnemies(dt) {
 
       if (enemy.type === "turret" && enemy.cd <= 0) {
         const p = cellCenter(enemy.col, enemy.row);
-        const yDrift = enemy.dirJam > 0 ? (Math.floor(Math.random() * 3) - 1) * grid.cell * 0.55 : 0;
-        enemy.action = { type: "shoot", y: p.y + yDrift };
+        const targetRow = enemy.dirJam > 0 ? Math.floor(Math.random() * grid.rows) : player.row;
+        const target = cellCenter(enemy.col, targetRow);
+        const dir = player.col < enemy.col ? -1 : 1;
+        enemy.facing = dir;
+        enemy.action = { type: "shoot", y: target.y, dir };
         enemy.windup = 0.42;
         enemy.cd = 999;
         playTone(240, 0.035, "sine", 0.014);
@@ -371,7 +433,7 @@ function updateAreaEffects(dt) {
     slash.t -= dt;
     for (const enemy of enemies) {
       if (!slash.done && enemy.col === slash.col && enemy.row === slash.row) {
-        damageEnemy(enemy, slash.damage, 1);
+        damageEnemy(enemy, slash.damage, slash.knock || 0);
         slash.done = true;
       }
     }
@@ -411,11 +473,33 @@ function updateWave(dt) {
   if (enemies.length === 0 && spawnTimer <= 0) {
     wave += 1;
     spawnTimer = 0.5;
-    spawnEnemy("charger", 5, Math.floor(Math.random() * 3));
-    spawnEnemy("turret", 4 + Math.floor(Math.random() * 2), Math.floor(Math.random() * 3));
-    if (wave % 2 === 0) spawnEnemy("charger", 5, Math.floor(Math.random() * 3));
+    spawnRandomEnemy("charger");
+    spawnRandomEnemy("turret");
+    if (wave % 2 === 0) spawnRandomEnemy("charger");
     message = `WAVE ${wave}`;
   }
+}
+
+function spawnRandomEnemy(type) {
+  let fallback = null;
+  let fallbackDistance = -1;
+  for (let tries = 0; tries < 40; tries++) {
+    const col = Math.floor(Math.random() * grid.cols);
+    const row = Math.floor(Math.random() * grid.rows);
+    const distance = Math.abs(col - player.col) + Math.abs(row - player.row);
+    if (distance < 4 || isBlocked(col, row) || isEnemyCell(col, row) || isPlayerCell(col, row)) continue;
+    spawnEnemy(type, col, row);
+    return;
+  }
+  for (let row = 0; row < grid.rows; row++) {
+    for (let col = 0; col < grid.cols; col++) {
+      const distance = Math.abs(col - player.col) + Math.abs(row - player.row);
+      if (isBlocked(col, row) || isEnemyCell(col, row) || isPlayerCell(col, row) || distance <= fallbackDistance) continue;
+      fallback = { col, row };
+      fallbackDistance = distance;
+    }
+  }
+  if (fallback) spawnEnemy(type, fallback.col, fallback.row);
 }
 
 function update(dt) {
@@ -444,25 +528,18 @@ function drawGrid() {
     for (let col = 0; col < grid.cols; col++) {
       const x = grid.x + col * (grid.cell + grid.gap);
       const y = grid.y + row * (grid.cell + grid.gap);
-      const playerSide = col <= 2;
-      ctx.fillStyle = playerSide ? "rgba(31, 123, 143, 0.22)" : "rgba(120, 47, 58, 0.22)";
-      ctx.strokeStyle = playerSide ? "rgba(70, 228, 255, 0.55)" : "rgba(255, 91, 110, 0.50)";
+      const parity = (col + row) % 2;
+      ctx.fillStyle = parity ? "rgba(31, 123, 143, 0.18)" : "rgba(36, 54, 62, 0.32)";
+      ctx.strokeStyle = "rgba(142, 245, 255, 0.38)";
       ctx.lineWidth = 2;
       ctx.fillRect(x, y, grid.cell, grid.cell);
       ctx.strokeRect(x + 0.5, y + 0.5, grid.cell - 1, grid.cell - 1);
     }
   }
-  ctx.strokeStyle = "rgba(255,255,255,0.35)";
-  ctx.setLineDash([8, 8]);
-  ctx.beginPath();
-  const split = grid.x + 3 * (grid.cell + grid.gap) - grid.gap / 2;
-  ctx.moveTo(split, grid.y - 14);
-  ctx.lineTo(split, grid.y + grid.rows * (grid.cell + grid.gap) - grid.gap + 14);
-  ctx.stroke();
   ctx.restore();
 }
 
-function drawRobot(x, y, color, enemy = false, flash = 0) {
+function drawRobot(x, y, color, enemy = false, flash = 0, dir = 1) {
   ctx.save();
   ctx.translate(x, y);
   ctx.fillStyle = flash > 0 ? "#ffffff" : color;
@@ -471,7 +548,7 @@ function drawRobot(x, y, color, enemy = false, flash = 0) {
   ctx.fillRect(-24, -27, 48, 54);
   ctx.strokeRect(-24, -27, 48, 54);
   ctx.fillStyle = enemy ? "#ff5b6e" : "#46e4ff";
-  ctx.fillRect(enemy ? -19 : 5, -12, 14, 8);
+  ctx.fillRect(dir < 0 ? -19 : 5, -12, 14, 8);
   ctx.fillRect(-14, 31, 10, 10);
   ctx.fillRect(4, 31, 10, 10);
   ctx.restore();
@@ -498,17 +575,18 @@ function drawEnemyTelegraphs() {
     if (enemy.action.type === "shoot") {
       ctx.strokeStyle = "#ff5b6e";
       ctx.lineWidth = 5;
+      const edgeX = enemy.action.dir > 0 ? grid.x + grid.cols * (grid.cell + grid.gap) - grid.gap : grid.x;
       ctx.beginPath();
-      ctx.moveTo(grid.x, enemy.action.y);
-      ctx.lineTo(enemy.px - 38, enemy.action.y);
+      ctx.moveTo(enemy.px + enemy.action.dir * 38, enemy.action.y);
+      ctx.lineTo(edgeX, enemy.action.y);
       ctx.stroke();
       ctx.lineWidth = 1;
       ctx.strokeStyle = "#ffd35a";
       ctx.beginPath();
-      ctx.moveTo(grid.x, enemy.action.y - 9);
-      ctx.lineTo(enemy.px - 38, enemy.action.y - 9);
-      ctx.moveTo(grid.x, enemy.action.y + 9);
-      ctx.lineTo(enemy.px - 38, enemy.action.y + 9);
+      ctx.moveTo(enemy.px + enemy.action.dir * 38, enemy.action.y - 9);
+      ctx.lineTo(edgeX, enemy.action.y - 9);
+      ctx.moveTo(enemy.px + enemy.action.dir * 38, enemy.action.y + 9);
+      ctx.lineTo(edgeX, enemy.action.y + 9);
       ctx.stroke();
     }
     ctx.restore();
@@ -575,7 +653,7 @@ function draw() {
   }
 
   for (const enemy of enemies) {
-    drawRobot(enemy.px, enemy.py, enemy.type === "charger" ? "#6b303b" : "#7c6635", true, enemy.flash);
+    drawRobot(enemy.px, enemy.py, enemy.type === "charger" ? "#6b303b" : "#7c6635", true, enemy.flash, enemy.facing);
     if (enemy.dirJam > 0) {
       ctx.strokeStyle = "#c77dff";
       ctx.lineWidth = 2;
@@ -592,7 +670,7 @@ function draw() {
   for (const clone of clones) {
     ctx.save();
     ctx.globalAlpha = Math.max(0, clone.t / clone.max) * 0.55;
-    drawRobot(clone.px, clone.py, "#2b8f78", false, 0);
+    drawRobot(clone.px, clone.py, "#2b8f78", false, 0, clone.facing);
     ctx.strokeStyle = "#7dff91";
     ctx.lineWidth = 2;
     ctx.strokeRect(clone.px - 32, clone.py - 35, 64, 70);
@@ -600,7 +678,7 @@ function draw() {
   }
 
   if (player.invuln <= 0 || Math.floor(performance.now() / 70) % 2 === 0) {
-    drawRobot(player.px, player.py, player.dash > 0 ? "#7dff91" : "#1d5d6e", false, 0);
+    drawRobot(player.px, player.py, player.dash > 0 ? "#7dff91" : "#1d5d6e", false, 0, player.facing);
   }
 
   for (const spark of sparks) {
@@ -622,6 +700,9 @@ function drawOverlay() {
   ctx.fillStyle = "#e8f7f8";
   ctx.font = "700 18px system-ui";
   ctx.fillText(message, 42, 50);
+  ctx.fillStyle = player.facing < 0 ? "#ffd35a" : "#7dff91";
+  ctx.font = "800 14px system-ui";
+  ctx.fillText(player.facing < 0 ? "DIR <" : "DIR >", 310, 49);
 
   for (let i = 0; i < 4; i++) {
     const x = 430 + i * 122;
@@ -662,10 +743,11 @@ function loop(now) {
 
 function restart() {
   player.col = 1;
-  player.row = 1;
+  player.row = 3;
   player.hp = player.maxHp;
   player.invuln = 0;
-  player.fireCd = 0;
+  player.gunCd = 0;
+  player.swordCd = 0;
   player.chipCd = [0, 0, 0, 0];
   player.facing = 1;
   const p = cellCenter(player.col, player.row);
@@ -677,12 +759,12 @@ function restart() {
   clones.length = 0;
   sparks.length = 0;
   enemies.length = 0;
-  obstacles.splice(0, obstacles.length, { col: 2, row: 1, hp: 45, flash: 0 });
+  obstacles.splice(0, obstacles.length, { col: 2, row: 2, hp: 45, flash: 0 }, { col: 3, row: 4, hp: 45, flash: 0 });
   wave = 1;
   gameOver = false;
   message = "SYSTEM ONLINE";
-  spawnEnemy("charger", 4, 0);
-  spawnEnemy("turret", 5, 2);
+  spawnEnemy("charger", 4, 1);
+  spawnEnemy("turret", 5, 4);
 }
 
 window.addEventListener("keydown", (event) => {
@@ -690,7 +772,7 @@ window.addEventListener("keydown", (event) => {
   const key = event.key.toLowerCase();
   if (!keys.has(key)) pressed.add(key);
   keys.add(key);
-  if ([" ", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) event.preventDefault();
+  if ([" ", "tab", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) event.preventDefault();
   if (key === "r") restart();
 });
 
@@ -705,8 +787,10 @@ function performTouchAction(action) {
   if (action === "down") tryMove(0, 1);
   if (action === "left") tryMove(-1, 0);
   if (action === "right") tryMove(1, 0);
+  if (action === "turn") flipPlayer();
   if (action === "dash") dashPlayer();
-  if (action === "buster") fireBuster();
+  if (action === "gun") fireGun();
+  if (action === "sword") swingSword();
   if (action === "chip0") useChip(0);
   if (action === "chip1") useChip(1);
   if (action === "chip2") useChip(2);
@@ -723,7 +807,7 @@ for (const button of touchButtons) {
     button.classList.add("is-down");
     performTouchAction(action);
     if (repeat) clearInterval(repeat);
-    if (["up", "down", "left", "right", "buster"].includes(action)) {
+    if (["up", "down", "left", "right", "gun"].includes(action)) {
       repeat = setInterval(() => performTouchAction(action), interval);
     }
   };
