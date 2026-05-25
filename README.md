@@ -2,7 +2,7 @@
 
 Realtime grid strategy action prototype with robotics and cyber-infrastructure motifs.
 
-Clear Wave 5 to complete the current mission and receive a performance rank.
+Defeat the Wave 5 Signal Warden boss to complete the current mission and receive a performance rank.
 
 ## Play Locally
 

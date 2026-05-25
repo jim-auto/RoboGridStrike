@@ -173,6 +173,7 @@ function spawnEnemy(type, col, row) {
     charger: { hp: 75, cd: 0.9 },
     turret: { hp: 60, cd: 1.4 },
     worker: { hp: 70, cd: 1.15 },
+    warden: { hp: 360, cd: 1.0 },
   };
   const spec = specs[type] || specs.charger;
   enemies.push({
@@ -191,6 +192,7 @@ function spawnEnemy(type, col, row) {
     flash: 0,
     dirJam: 0,
     facing: -1,
+    pattern: 0,
   });
 }
 
@@ -251,7 +253,7 @@ function damageEnemy(enemy, amount, knock = 0, syncGain = amount * 0.32) {
   enemy.flash = 0.12;
   enemy.stun = Math.max(enemy.stun, 0.08);
   const nextCol = Math.max(0, Math.min(grid.cols - 1, enemy.col + knock));
-  if (knock && !isBlocked(nextCol, enemy.row) && !isEnemyCell(nextCol, enemy.row, enemy.id) && !isPlayerCell(nextCol, enemy.row)) {
+  if (enemy.type !== "warden" && knock && !isBlocked(nextCol, enemy.row) && !isEnemyCell(nextCol, enemy.row, enemy.id) && !isPlayerCell(nextCol, enemy.row)) {
     enemy.col = nextCol;
   }
   const p = cellCenter(enemy.col, enemy.row);
@@ -333,6 +335,66 @@ function startLaneWork(enemy) {
   enemy.cd = 999;
   playTone(260, 0.04, "triangle", 0.014);
   return true;
+}
+
+function rowCells(row) {
+  const cells = [];
+  for (let col = 0; col < grid.cols; col++) cells.push({ col, row });
+  return cells;
+}
+
+function colCells(col) {
+  const cells = [];
+  for (let row = 0; row < grid.rows; row++) cells.push({ col, row });
+  return cells;
+}
+
+function wardenBarrierCells(enemy) {
+  const anchors = [
+    { col: 2, row: Math.max(0, player.row - 1) },
+    { col: 3, row: Math.min(grid.rows - 1, player.row + 1) },
+    { col: enemy.col - 1, row: Math.max(0, Math.min(grid.rows - 1, player.row)) },
+  ];
+  const cells = [];
+  for (const cell of anchors) {
+    if (!inBounds(cell.col, cell.row) || isPlayerCell(cell.col, cell.row) || isEnemyCell(cell.col, cell.row)) continue;
+    if (cells.some((other) => other.col === cell.col && other.row === cell.row)) continue;
+    cells.push(cell);
+  }
+  return cells;
+}
+
+function startWardenAction(enemy) {
+  const step = enemy.pattern % 3;
+  enemy.pattern += 1;
+  enemy.facing = player.col < enemy.col ? -1 : 1;
+
+  if (step === 0) {
+    enemy.action = { type: "wardenBeam", cells: rowCells(player.row) };
+    enemy.windup = 0.68;
+    enemy.cd = 999;
+    message = "SIGNAL WARDEN: ROW LOCK";
+    playTone(210, 0.06, "sine", 0.018);
+    return;
+  }
+
+  if (step === 1) {
+    const row = player.row;
+    const col = Math.max(0, Math.min(grid.cols - 1, player.col + player.facing));
+    enemy.action = { type: "wardenLane", cells: [...rowCells(row), ...colCells(col)] };
+    enemy.windup = 0.55;
+    enemy.cd = 999;
+    message = "SIGNAL WARDEN: WORK ZONE";
+    playTone(260, 0.06, "triangle", 0.018);
+    return;
+  }
+
+  const cells = wardenBarrierCells(enemy);
+  enemy.action = { type: "wardenBarrier", cells };
+  enemy.windup = 0.7;
+  enemy.cd = 999;
+  message = "SIGNAL WARDEN: BARRIER SHIFT";
+  playTone(130, 0.08, "sawtooth", 0.018);
 }
 
 function fireGun() {
@@ -536,6 +598,25 @@ function updateEnemies(dt) {
           shake = Math.max(shake, 5);
           playTone(150, 0.08, "sawtooth", 0.026);
         }
+        if (enemy.action.type === "wardenBeam") {
+          hazards.push({ cells: enemy.action.cells, t: 0.48, tick: 0, damage: 16, kind: "beam" });
+          enemy.cd = 0.9;
+          shake = Math.max(shake, 9);
+          playTone(90, 0.12, "sawtooth", 0.04);
+        }
+        if (enemy.action.type === "wardenLane") {
+          hazards.push({ cells: enemy.action.cells, t: 1.85, tick: 0, damage: 12, kind: "lane" });
+          enemy.cd = 1.15;
+          shake = Math.max(shake, 7);
+          playTone(170, 0.1, "sawtooth", 0.034);
+        }
+        if (enemy.action.type === "wardenBarrier") {
+          obstacles.splice(0, obstacles.length);
+          for (const cell of enemy.action.cells) obstacles.push({ col: cell.col, row: cell.row, hp: 55, flash: 0.24 });
+          enemy.cd = 1.35;
+          shake = Math.max(shake, 8);
+          playTone(120, 0.12, "triangle", 0.04);
+        }
         enemy.action = null;
       }
     } else {
@@ -570,6 +651,10 @@ function updateEnemies(dt) {
 
       if (enemy.type === "worker" && enemy.cd <= 0) {
         if (!startLaneWork(enemy)) enemy.cd = 0.4;
+      }
+
+      if (enemy.type === "warden" && enemy.cd <= 0) {
+        startWardenAction(enemy);
       }
     }
 
@@ -712,6 +797,12 @@ function openUpgradeSelection() {
 }
 
 function spawnWaveEnemies(level) {
+  if (level >= MISSION_CLEAR_WAVE) {
+    obstacles.splice(0, obstacles.length, { col: 2, row: 1, hp: 55, flash: 0 }, { col: 3, row: 4, hp: 55, flash: 0 });
+    spawnEnemy("warden", 5, 2);
+    message = "SIGNAL WARDEN ONLINE";
+    return;
+  }
   spawnRandomEnemy("charger");
   spawnRandomEnemy("turret");
   if (level >= 2) spawnRandomEnemy("worker");
@@ -1019,6 +1110,55 @@ function drawWorkerRobot(enemy) {
   ctx.restore();
 }
 
+function drawWardenRobot(enemy) {
+  ctx.save();
+  ctx.translate(enemy.px, enemy.py);
+  ctx.fillStyle = enemy.flash > 0 ? "#ffffff" : "#2a3437";
+  ctx.strokeStyle = "#ff5b6e";
+  ctx.lineWidth = 4;
+  ctx.fillRect(-33, -34, 66, 68);
+  ctx.strokeRect(-33, -34, 66, 68);
+  ctx.fillStyle = "#3e4b4f";
+  ctx.fillRect(-43, -13, 16, 40);
+  ctx.fillRect(27, -13, 16, 40);
+  ctx.strokeRect(-43, -13, 16, 40);
+  ctx.strokeRect(27, -13, 16, 40);
+
+  ctx.fillStyle = "#5b252e";
+  ctx.beginPath();
+  ctx.moveTo(-28, -55);
+  ctx.lineTo(28, -55);
+  ctx.lineTo(37, -36);
+  ctx.lineTo(26, -24);
+  ctx.lineTo(-26, -24);
+  ctx.lineTo(-37, -36);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = "#ff5b6e";
+  ctx.shadowBlur = 14;
+  ctx.shadowColor = "#ff5b6e";
+  ctx.fillRect(enemy.facing < 0 ? -24 : 8, -44, 16, 12);
+  ctx.shadowBlur = 0;
+
+  ctx.strokeStyle = "#ffd35a";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-22, -61);
+  ctx.lineTo(-38, -78);
+  ctx.moveTo(22, -61);
+  ctx.lineTo(38, -78);
+  ctx.stroke();
+
+  ctx.fillStyle = "#ff5b6e";
+  ctx.fillRect(-28, 34, 18, 12);
+  ctx.fillRect(10, 34, 18, 12);
+  ctx.fillStyle = "#ffd35a";
+  ctx.fillRect(-8, -2, 16, 28);
+  ctx.restore();
+}
+
 function drawEnemyTelegraphs() {
   for (const enemy of enemies) {
     if (!enemy.action || enemy.windup <= 0) continue;
@@ -1066,6 +1206,19 @@ function drawEnemyTelegraphs() {
         ctx.strokeRect(c.x - half + 6, c.y - half + 6, grid.cell - 12, grid.cell - 12);
       }
     }
+    if (enemy.action.type === "wardenBeam" || enemy.action.type === "wardenLane" || enemy.action.type === "wardenBarrier") {
+      const isBeam = enemy.action.type === "wardenBeam";
+      const isBarrier = enemy.action.type === "wardenBarrier";
+      ctx.fillStyle = isBarrier ? "rgba(142, 245, 255, 0.18)" : isBeam ? "rgba(255, 91, 110, 0.28)" : "rgba(255, 211, 90, 0.24)";
+      ctx.strokeStyle = isBarrier ? "#8ef5ff" : isBeam ? "#ff5b6e" : "#ffd35a";
+      ctx.lineWidth = isBeam ? 5 : 4;
+      for (const cell of enemy.action.cells) {
+        const c = cellCenter(cell.col, cell.row);
+        const half = grid.cell / 2;
+        ctx.fillRect(c.x - half, c.y - half, grid.cell, grid.cell);
+        ctx.strokeRect(c.x - half + 5, c.y - half + 5, grid.cell - 10, grid.cell - 10);
+      }
+    }
     ctx.restore();
   }
 }
@@ -1097,13 +1250,14 @@ function draw() {
 
   for (const hazard of hazards) {
     const pulse = 0.55 + Math.sin(performance.now() / 70) * 0.18;
+    const isBeam = hazard.kind === "beam";
     for (const cell of hazard.cells) {
       const c = cellCenter(cell.col, cell.row);
       const half = grid.cell / 2;
       ctx.save();
       ctx.globalAlpha = Math.max(0.2, Math.min(0.9, pulse));
-      ctx.fillStyle = "rgba(255, 211, 90, 0.22)";
-      ctx.strokeStyle = "#ffd35a";
+      ctx.fillStyle = isBeam ? "rgba(255, 91, 110, 0.33)" : "rgba(255, 211, 90, 0.22)";
+      ctx.strokeStyle = isBeam ? "#ff5b6e" : "#ffd35a";
       ctx.lineWidth = 3;
       ctx.fillRect(c.x - half, c.y - half, grid.cell, grid.cell);
       ctx.strokeRect(c.x - half + 5, c.y - half + 5, grid.cell - 10, grid.cell - 10);
@@ -1171,7 +1325,9 @@ function draw() {
   }
 
   for (const enemy of enemies) {
-    if (enemy.type === "worker") {
+    if (enemy.type === "warden") {
+      drawWardenRobot(enemy);
+    } else if (enemy.type === "worker") {
       drawWorkerRobot(enemy);
     } else {
       drawRobot(enemy.px, enemy.py, enemy.type === "charger" ? "#6b303b" : "#7c6635", true, enemy.flash, enemy.facing);
@@ -1279,6 +1435,8 @@ function drawOverlay() {
     }
   }
 
+  drawBossOverlay();
+
   if (upgradePending) {
     drawUpgradeOverlay();
   }
@@ -1299,6 +1457,29 @@ function drawOverlay() {
     ctx.fillText("Press R to reboot combat simulation", W / 2, H / 2 + 30);
     ctx.textAlign = "left";
   }
+}
+
+function drawBossOverlay() {
+  const boss = enemies.find((enemy) => enemy.type === "warden" && enemy.hp > 0);
+  if (!boss) return;
+  const x = 248;
+  const y = 70;
+  const w = 466;
+  const h = 16;
+  ctx.save();
+  ctx.fillStyle = "rgba(20, 7, 10, 0.90)";
+  ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = "#ff5b6e";
+  ctx.fillRect(x, y, w * Math.max(0, boss.hp / boss.maxHp), h);
+  ctx.strokeStyle = "#ffd35a";
+  ctx.lineWidth = 2;
+  ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+  ctx.fillStyle = "#e8f7f8";
+  ctx.font = "800 12px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("SIGNAL WARDEN", x + w / 2, y - 5);
+  ctx.textAlign = "left";
+  ctx.restore();
 }
 
 function drawMissionCompleteOverlay() {
