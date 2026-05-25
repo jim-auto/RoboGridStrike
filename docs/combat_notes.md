@@ -4,7 +4,7 @@
 
 - Combat uses a shared 6x6 field instead of separate player and enemy areas.
 - Movement is cell-snapped and quick across the whole board.
-- Facing is an explicit left/right command, with movement also updating horizontal facing.
+- Facing has explicit in-place left/right and flip commands, with a short pivot animation.
 - Mirror Phase shifts to the opposite side of the 6x6 field and sends a row pulse through crossed cells.
 - Successful hits build SYNC; full SYNC turns the next Phase into Overclock Phase with stronger damage and faster cooldown recovery.
 - Gun is a low damage default ranged attack with short cooldown.

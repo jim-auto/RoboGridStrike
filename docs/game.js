@@ -6,6 +6,8 @@ const hpEl = document.getElementById("hp");
 const waveEl = document.getElementById("wave");
 const syncEl = document.getElementById("sync");
 const touchButtons = document.querySelectorAll("[data-action]");
+const heroArt = new Image();
+heroArt.src = "./assets/maintenance-robot.jpg";
 
 const W = canvas.width;
 const H = canvas.height;
@@ -62,6 +64,7 @@ const player = {
   phaseCd: 0,
   sync: 0,
   overdrive: 0,
+  turn: 0,
   chipCd: [0, 0, 0, 0],
   facing: 1,
 };
@@ -153,6 +156,12 @@ function tryMove(dx, dy) {
   player.row = nextRow;
 }
 
+function addTurnBurst(dir) {
+  const p = cellCenter(player.col, player.row);
+  sparks.push({ x: p.x - dir * 22, y: p.y, t: 0.14, color: "#7dff91" });
+  sparks.push({ x: p.x + dir * 18, y: p.y - 22, t: 0.12, color: "#ffd35a" });
+}
+
 function dashPlayer() {
   player.dash = 0.12;
   tryMove(player.facing, 0);
@@ -206,8 +215,17 @@ function addClone(col, row, duration = 1.0) {
 }
 
 function turnPlayer(dir) {
+  if (player.facing === dir) {
+    player.turn = Math.max(player.turn, 0.1);
+    message = dir < 0 ? "HOLDING LEFT" : "HOLDING RIGHT";
+    return;
+  }
   player.facing = dir;
-  message = dir < 0 ? "FACING LEFT" : "FACING RIGHT";
+  player.turn = 0.22;
+  addTurnBurst(dir);
+  shake = Math.max(shake, 3);
+  message = dir < 0 ? "PIVOT LEFT" : "PIVOT RIGHT";
+  playTone(dir < 0 ? 330 : 390, 0.045, "triangle", 0.022);
 }
 
 function flipPlayer() {
@@ -346,6 +364,7 @@ function updatePlayer(dt) {
   player.swordCd = Math.max(0, player.swordCd - dt * cdRate);
   player.phaseCd = Math.max(0, player.phaseCd - dt);
   player.overdrive = Math.max(0, player.overdrive - dt);
+  player.turn = Math.max(0, player.turn - dt);
   player.invuln = Math.max(0, player.invuln - dt);
   player.dash = Math.max(0, player.dash - dt);
   player.chipCd = player.chipCd.map((v) => Math.max(0, v - dt * (player.overdrive > 0 ? 1.25 : 1)));
@@ -621,9 +640,32 @@ function drawGrid() {
   ctx.restore();
 }
 
-function drawRobot(x, y, color, enemy = false, flash = 0, dir = 1) {
+function drawHeroArt() {
+  if (!heroArt.complete || heroArt.naturalWidth === 0) return;
+  ctx.save();
+  ctx.globalAlpha = 0.86;
+  ctx.drawImage(heroArt, 85, 29, 305, 610, 24, 88, 214, 428);
+  const gradient = ctx.createLinearGradient(24, 88, 238, 88);
+  gradient.addColorStop(0, "rgba(7, 16, 20, 0)");
+  gradient.addColorStop(0.78, "rgba(7, 16, 20, 0.14)");
+  gradient.addColorStop(1, "rgba(7, 16, 20, 0.82)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(24, 88, 214, 428);
+  ctx.strokeStyle = "rgba(142, 245, 255, 0.24)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(24.5, 88.5, 213, 427);
+  ctx.restore();
+}
+
+function drawRobot(x, y, color, enemy = false, flash = 0, dir = 1, turn = 0) {
   ctx.save();
   ctx.translate(x, y);
+  if (turn > 0) {
+    const progress = (0.22 - Math.min(turn, 0.22)) / 0.22;
+    const pivot = Math.sin(progress * Math.PI);
+    ctx.rotate(-dir * pivot * 0.12);
+    ctx.scale(1 - pivot * 0.34, 1 + pivot * 0.06);
+  }
   ctx.fillStyle = flash > 0 ? "#ffffff" : color;
   ctx.strokeStyle = enemy ? "#ffb0ba" : "#bff8ff";
   ctx.lineWidth = 3;
@@ -688,6 +730,7 @@ function draw() {
     ctx.fillRect(70 + i * 50, 52 + ((performance.now() / 20 + i * 29) % 390), 18, 1);
   }
 
+  drawHeroArt();
   drawGrid();
 
   for (const zone of zones) {
@@ -776,8 +819,32 @@ function draw() {
     ctx.restore();
   }
 
+  if (player.turn > 0) {
+    const progress = (0.22 - Math.min(player.turn, 0.22)) / 0.22;
+    const alpha = Math.max(0, 1 - progress);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = player.facing < 0 ? "#ffd35a" : "#7dff91";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    if (player.facing < 0) {
+      ctx.arc(player.px, player.py, 42, Math.PI * 0.18, Math.PI * 1.55, true);
+    } else {
+      ctx.arc(player.px, player.py, 42, Math.PI * 0.82, Math.PI * -0.55, false);
+    }
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(player.px + player.facing * 43, player.py - 6);
+    ctx.lineTo(player.px + player.facing * 31, player.py - 18);
+    ctx.lineTo(player.px + player.facing * 31, player.py + 6);
+    ctx.closePath();
+    ctx.fillStyle = player.facing < 0 ? "#ffd35a" : "#7dff91";
+    ctx.fill();
+    ctx.restore();
+  }
+
   if (player.invuln <= 0 || Math.floor(performance.now() / 70) % 2 === 0) {
-    drawRobot(player.px, player.py, player.overdrive > 0 ? "#b38b2f" : player.dash > 0 ? "#7dff91" : "#1d5d6e", false, 0, player.facing);
+    drawRobot(player.px, player.py, player.overdrive > 0 ? "#b38b2f" : player.dash > 0 ? "#7dff91" : "#1d5d6e", false, 0, player.facing, player.turn);
   }
 
   for (const spark of sparks) {
@@ -863,6 +930,7 @@ function restart() {
   player.phaseCd = 0;
   player.sync = 0;
   player.overdrive = 0;
+  player.turn = 0;
   player.chipCd = [0, 0, 0, 0];
   player.facing = 1;
   const p = cellCenter(player.col, player.row);
