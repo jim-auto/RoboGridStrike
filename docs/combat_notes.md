@@ -13,12 +13,14 @@
 - Arc Snare creates short-lived control zones in the facing direction.
 - Vector Clone combines fast repositioning, attack, and decoy afterimages.
 - Localization Jam corrupts enemy targeting and creates short-lived jam zones.
+- Road Worker enemies paint temporary work-lane hazards across the shared board.
 
 ## Implemented Feedback
 
 - Hitstop on successful hits.
 - Screen shake on heavy impacts and damage.
 - Basic WebAudio tones for attack and damage feedback.
+- Player battle sprite now matches the maintenance robot art direction.
 - Enemy HP bars and player invulnerability flicker.
 - SYNC status and Phase cooldown are visible in the HUD.
 - Enemy windups show charge danger tiles and turret firing lines before attacks.

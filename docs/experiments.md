@@ -7,7 +7,7 @@
 - Controls: WASD/Arrows, Q/E in-place turn, C/Tab flip, F phase, Space/Shift dash, J/Z gun, K/X sword, 1-4 chips.
 - Implemented command system: Mirror Phase and SYNC-powered Overclock Phase.
 - Implemented chips: LiDAR Sweep, Arc Snare, Vector Clone, Localization Jam.
-- Implemented enemies: charger and turret.
+- Implemented enemies: charger, turret, and road worker.
 
 ## Next Combat Questions
 

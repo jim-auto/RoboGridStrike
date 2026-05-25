@@ -25,6 +25,7 @@ const pressed = new Set();
 const shots = [];
 const slashes = [];
 const zones = [];
+const hazards = [];
 const clones = [];
 const pulses = [];
 const sparks = [];
@@ -82,7 +83,8 @@ function init() {
   player.py = p.y;
   enemies.length = 0;
   spawnEnemy("charger", 4, 1);
-  spawnEnemy("turret", 5, 4);
+  spawnEnemy("worker", 5, 3);
+  spawnEnemy("turret", 5, 5);
 }
 
 function playTone(freq, dur = 0.04, type = "square", gain = 0.025) {
@@ -104,6 +106,12 @@ function armAudio() {
 
 function spawnEnemy(type, col, row) {
   const p = cellCenter(col, row);
+  const specs = {
+    charger: { hp: 75, cd: 0.9 },
+    turret: { hp: 60, cd: 1.4 },
+    worker: { hp: 70, cd: 1.15 },
+  };
+  const spec = specs[type] || specs.charger;
   enemies.push({
     id: nextEnemyId++,
     type,
@@ -111,9 +119,9 @@ function spawnEnemy(type, col, row) {
     row,
     px: p.x,
     py: p.y,
-    hp: type === "charger" ? 75 : 60,
-    maxHp: type === "charger" ? 75 : 60,
-    cd: type === "charger" ? 0.9 : 1.4,
+    hp: spec.hp,
+    maxHp: spec.hp,
+    cd: spec.cd,
     windup: 0,
     action: null,
     stun: 0,
@@ -230,6 +238,37 @@ function turnPlayer(dir) {
 
 function flipPlayer() {
   turnPlayer(player.facing * -1);
+}
+
+function makeLaneCells(enemy) {
+  const cells = [];
+  const useRow = Math.abs(player.col - enemy.col) >= Math.abs(player.row - enemy.row);
+  if (useRow) {
+    const row = player.row;
+    const left = Math.min(player.col, enemy.col);
+    const right = Math.max(player.col, enemy.col);
+    for (let col = left; col <= right; col++) {
+      if (inBounds(col, row) && !isBlocked(col, row)) cells.push({ col, row });
+    }
+  } else {
+    const col = player.col;
+    const top = Math.min(player.row, enemy.row);
+    const bottom = Math.max(player.row, enemy.row);
+    for (let row = top; row <= bottom; row++) {
+      if (inBounds(col, row) && !isBlocked(col, row)) cells.push({ col, row });
+    }
+  }
+  return cells;
+}
+
+function startLaneWork(enemy) {
+  const cells = makeLaneCells(enemy);
+  if (!cells.length) return false;
+  enemy.action = { type: "lane", cells };
+  enemy.windup = 0.5;
+  enemy.cd = 999;
+  playTone(260, 0.04, "triangle", 0.014);
+  return true;
 }
 
 function fireGun() {
@@ -426,6 +465,12 @@ function updateEnemies(dt) {
           enemy.cd = 1.25 + Math.random() * 0.5;
           playTone(300, 0.04, "square", 0.018);
         }
+        if (enemy.action.type === "lane") {
+          hazards.push({ cells: enemy.action.cells, t: 1.8, tick: 0, damage: 10 });
+          enemy.cd = 1.55 + Math.random() * 0.45;
+          shake = Math.max(shake, 5);
+          playTone(150, 0.08, "sawtooth", 0.026);
+        }
         enemy.action = null;
       }
     } else {
@@ -456,6 +501,10 @@ function updateEnemies(dt) {
         enemy.windup = 0.42;
         enemy.cd = 999;
         playTone(240, 0.035, "sine", 0.014);
+      }
+
+      if (enemy.type === "worker" && enemy.cd <= 0) {
+        if (!startLaneWork(enemy)) enemy.cd = 0.4;
       }
     }
 
@@ -556,6 +605,23 @@ function updateAreaEffects(dt) {
     if (zones[i].t <= 0) zones.splice(i, 1);
   }
 
+  for (const hazard of hazards) {
+    hazard.t -= dt;
+    hazard.tick -= dt;
+    if (hazard.tick <= 0) {
+      hazard.tick = 0.42;
+      for (const cell of hazard.cells) {
+        if (player.col === cell.col && player.row === cell.row) {
+          hurtPlayer(hazard.damage);
+          break;
+        }
+      }
+    }
+  }
+  for (let i = hazards.length - 1; i >= 0; i--) {
+    if (hazards[i].t <= 0) hazards.splice(i, 1);
+  }
+
   for (const spark of sparks) spark.t -= dt;
   for (let i = sparks.length - 1; i >= 0; i--) {
     if (sparks[i].t <= 0) sparks.splice(i, 1);
@@ -572,6 +638,7 @@ function updateWave(dt) {
     spawnTimer = 0.5;
     spawnRandomEnemy("charger");
     spawnRandomEnemy("turret");
+    if (wave >= 2) spawnRandomEnemy("worker");
     if (wave % 2 === 0) spawnRandomEnemy("charger");
     message = `WAVE ${wave}`;
   }
@@ -678,6 +745,113 @@ function drawRobot(x, y, color, enemy = false, flash = 0, dir = 1, turn = 0) {
   ctx.restore();
 }
 
+function drawPlayerRobot(x, y, flash = 0, dir = 1, turn = 0) {
+  ctx.save();
+  ctx.translate(x, y);
+  if (turn > 0) {
+    const progress = (0.22 - Math.min(turn, 0.22)) / 0.22;
+    const pivot = Math.sin(progress * Math.PI);
+    ctx.rotate(-dir * pivot * 0.12);
+    ctx.scale(1 - pivot * 0.34, 1 + pivot * 0.06);
+  }
+
+  const shell = flash > 0 ? "#ffffff" : player.overdrive > 0 ? "#d7b85a" : "#d8d1c0";
+  const dark = "#1b2428";
+  const teal = "#46e4ff";
+  const yellow = "#ffd35a";
+
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = "#bff8ff";
+  ctx.fillStyle = dark;
+  ctx.fillRect(-31, -14, 62, 44);
+  ctx.strokeRect(-31, -14, 62, 44);
+
+  ctx.fillStyle = shell;
+  ctx.fillRect(-22, -26, 44, 34);
+  ctx.strokeRect(-22, -26, 44, 34);
+  ctx.fillRect(-18, 10, 14, 33);
+  ctx.fillRect(4, 10, 14, 33);
+  ctx.strokeRect(-18, 10, 14, 33);
+  ctx.strokeRect(4, 10, 14, 33);
+
+  ctx.fillStyle = shell;
+  ctx.beginPath();
+  ctx.moveTo(-21, -50);
+  ctx.lineTo(21, -50);
+  ctx.lineTo(27, -34);
+  ctx.lineTo(18, -22);
+  ctx.lineTo(-18, -22);
+  ctx.lineTo(-27, -34);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  ctx.fillStyle = teal;
+  ctx.shadowBlur = 12;
+  ctx.shadowColor = teal;
+  ctx.fillRect(dir < 0 ? -19 : 4, -40, 15, 13);
+  ctx.shadowBlur = 0;
+
+  ctx.fillStyle = yellow;
+  ctx.fillRect(16, -64, 18, 13);
+  ctx.strokeRect(16, -64, 18, 13);
+  ctx.strokeStyle = teal;
+  ctx.beginPath();
+  ctx.arc(25, -58, 4, 0, Math.PI * 2);
+  ctx.stroke();
+
+  ctx.strokeStyle = "#ffd35a";
+  ctx.lineWidth = 5;
+  ctx.beginPath();
+  ctx.moveTo(dir * 24, -2);
+  ctx.lineTo(dir * 49, 5);
+  ctx.stroke();
+  ctx.fillStyle = yellow;
+  ctx.fillRect(dir * 34 - (dir < 0 ? 18 : 0), -7, 18, 19);
+  ctx.strokeRect(dir * 34 - (dir < 0 ? 18 : 0), -7, 18, 19);
+
+  ctx.strokeStyle = "#e8f7f8";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(-dir * 24, 4);
+  ctx.lineTo(-dir * 36, 31);
+  ctx.stroke();
+
+  ctx.fillStyle = "#11181b";
+  ctx.fillRect(-24, 41, 18, 8);
+  ctx.fillRect(6, 41, 18, 8);
+  ctx.restore();
+}
+
+function drawWorkerRobot(enemy) {
+  ctx.save();
+  ctx.translate(enemy.px, enemy.py);
+  ctx.fillStyle = enemy.flash > 0 ? "#ffffff" : "#5f4b28";
+  ctx.strokeStyle = "#ffd35a";
+  ctx.lineWidth = 3;
+  ctx.fillRect(-25, -24, 50, 49);
+  ctx.strokeRect(-25, -24, 50, 49);
+  ctx.fillStyle = "#2c3438";
+  ctx.fillRect(-18, -39, 36, 18);
+  ctx.strokeRect(-18, -39, 36, 18);
+  ctx.fillStyle = "#ffd35a";
+  ctx.fillRect(-23, -43, 46, 7);
+  ctx.fillStyle = "#46e4ff";
+  ctx.fillRect(enemy.facing < 0 ? -15 : 5, -32, 10, 7);
+  ctx.fillStyle = "#10171a";
+  ctx.fillRect(-37, 1, 16, 33);
+  ctx.fillRect(21, 1, 16, 33);
+  ctx.strokeRect(-37, 1, 16, 33);
+  ctx.strokeRect(21, 1, 16, 33);
+  ctx.strokeStyle = "#ffd35a";
+  ctx.lineWidth = 4;
+  ctx.beginPath();
+  ctx.moveTo(enemy.facing * 21, -4);
+  ctx.lineTo(enemy.facing * 42, 14);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function drawEnemyTelegraphs() {
   for (const enemy of enemies) {
     if (!enemy.action || enemy.windup <= 0) continue;
@@ -714,6 +888,17 @@ function drawEnemyTelegraphs() {
       ctx.lineTo(edgeX, enemy.action.y + 9);
       ctx.stroke();
     }
+    if (enemy.action.type === "lane") {
+      ctx.fillStyle = "rgba(255, 211, 90, 0.24)";
+      ctx.strokeStyle = "#ffd35a";
+      ctx.lineWidth = 4;
+      for (const cell of enemy.action.cells) {
+        const c = cellCenter(cell.col, cell.row);
+        const half = grid.cell / 2;
+        ctx.fillRect(c.x - half, c.y - half, grid.cell, grid.cell);
+        ctx.strokeRect(c.x - half + 6, c.y - half + 6, grid.cell - 12, grid.cell - 12);
+      }
+    }
     ctx.restore();
   }
 }
@@ -741,6 +926,30 @@ function draw() {
     ctx.lineWidth = 4;
     ctx.fillRect(c.x - half, c.y - half, grid.cell, grid.cell);
     ctx.strokeRect(c.x - half + 5, c.y - half + 5, grid.cell - 10, grid.cell - 10);
+  }
+
+  for (const hazard of hazards) {
+    const pulse = 0.55 + Math.sin(performance.now() / 70) * 0.18;
+    for (const cell of hazard.cells) {
+      const c = cellCenter(cell.col, cell.row);
+      const half = grid.cell / 2;
+      ctx.save();
+      ctx.globalAlpha = Math.max(0.2, Math.min(0.9, pulse));
+      ctx.fillStyle = "rgba(255, 211, 90, 0.22)";
+      ctx.strokeStyle = "#ffd35a";
+      ctx.lineWidth = 3;
+      ctx.fillRect(c.x - half, c.y - half, grid.cell, grid.cell);
+      ctx.strokeRect(c.x - half + 5, c.y - half + 5, grid.cell - 10, grid.cell - 10);
+      ctx.strokeStyle = "rgba(255, 91, 110, 0.85)";
+      ctx.lineWidth = 2;
+      for (let i = -34; i < 34; i += 16) {
+        ctx.beginPath();
+        ctx.moveTo(c.x - half + i, c.y + half);
+        ctx.lineTo(c.x - half + i + 42, c.y - half);
+        ctx.stroke();
+      }
+      ctx.restore();
+    }
   }
 
   for (const o of obstacles) {
@@ -795,7 +1004,11 @@ function draw() {
   }
 
   for (const enemy of enemies) {
-    drawRobot(enemy.px, enemy.py, enemy.type === "charger" ? "#6b303b" : "#7c6635", true, enemy.flash, enemy.facing);
+    if (enemy.type === "worker") {
+      drawWorkerRobot(enemy);
+    } else {
+      drawRobot(enemy.px, enemy.py, enemy.type === "charger" ? "#6b303b" : "#7c6635", true, enemy.flash, enemy.facing);
+    }
     if (enemy.dirJam > 0) {
       ctx.strokeStyle = "#c77dff";
       ctx.lineWidth = 2;
@@ -844,7 +1057,7 @@ function draw() {
   }
 
   if (player.invuln <= 0 || Math.floor(performance.now() / 70) % 2 === 0) {
-    drawRobot(player.px, player.py, player.overdrive > 0 ? "#b38b2f" : player.dash > 0 ? "#7dff91" : "#1d5d6e", false, 0, player.facing, player.turn);
+    drawPlayerRobot(player.px, player.py, 0, player.facing, player.turn);
   }
 
   for (const spark of sparks) {
@@ -939,6 +1152,7 @@ function restart() {
   shots.length = 0;
   slashes.length = 0;
   zones.length = 0;
+  hazards.length = 0;
   clones.length = 0;
   pulses.length = 0;
   sparks.length = 0;
@@ -948,7 +1162,8 @@ function restart() {
   gameOver = false;
   message = "SYSTEM ONLINE";
   spawnEnemy("charger", 4, 1);
-  spawnEnemy("turret", 5, 4);
+  spawnEnemy("worker", 5, 3);
+  spawnEnemy("turret", 5, 5);
 }
 
 window.addEventListener("keydown", (event) => {
