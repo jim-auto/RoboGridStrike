@@ -24,6 +24,7 @@ The game will be served from the repository GitHub Pages URL.
 - Gun: `J` / `Z`
 - Sword: `K` / `X`
 - Chips: `1` LiDAR Sweep, `2` Arc Snare, `3` Vector Clone, `4` Localization Jam
+- Upgrade: choose `1`-`3` after clearing a wave
 - Restart: `R`
 
 Mobile browsers also show on-screen movement, turn, phase, weapon, chip, and reboot buttons.

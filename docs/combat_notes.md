@@ -14,6 +14,7 @@
 - Vector Clone combines fast repositioning, attack, and decoy afterimages.
 - Localization Jam corrupts enemy targeting and creates short-lived jam zones.
 - Road Worker enemies paint temporary work-lane hazards across the shared board.
+- Clearing a wave opens a 3-choice upgrade draft before the next wave starts.
 
 ## Implemented Feedback
 
@@ -23,5 +24,6 @@
 - Player battle sprite now matches the maintenance robot art direction.
 - Enemy HP bars and player invulnerability flicker.
 - SYNC status and Phase cooldown are visible in the HUD.
+- Upgrade cards show between waves and can be chosen with number keys or touch chip slots.
 - Enemy windups show charge danger tiles and turret firing lines before attacks.
 - Mobile touch controls support movement, turn, phase, dash, gun, sword, chips, and reboot.

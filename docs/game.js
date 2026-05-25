@@ -40,6 +40,51 @@ const chips = [
   { label: "CLONE", cooldown: 2.2 },
   { label: "JAM", cooldown: 4.0 },
 ];
+const upgradePool = [
+  {
+    title: "Rifle Tune",
+    detail: "Gun damage +3",
+    apply: () => {
+      player.gunBonus += 3;
+    },
+  },
+  {
+    title: "Blade Servo",
+    detail: "Sword damage +8",
+    apply: () => {
+      player.swordBonus += 8;
+    },
+  },
+  {
+    title: "Phase Bearing",
+    detail: "Phase cooldown -18%",
+    apply: () => {
+      player.phaseCdMult *= 0.82;
+    },
+  },
+  {
+    title: "Signal Cache",
+    detail: "SYNC gain +25%",
+    apply: () => {
+      player.syncGainMult *= 1.25;
+    },
+  },
+  {
+    title: "Chip Scheduler",
+    detail: "Chip cooldowns -15%",
+    apply: () => {
+      player.chipCdMult *= 0.85;
+    },
+  },
+  {
+    title: "Field Patch",
+    detail: "Max HP +20 and repair 30",
+    apply: () => {
+      player.maxHp += 20;
+      player.hp = Math.min(player.maxHp, player.hp + 30);
+    },
+  },
+];
 
 let audioCtx = null;
 let lastTime = performance.now();
@@ -50,6 +95,9 @@ let wave = 1;
 let spawnTimer = 0;
 let message = "SYSTEM ONLINE";
 let nextEnemyId = 1;
+let upgradePending = false;
+let upgradeChoices = [];
+let pendingWave = 1;
 
 const player = {
   col: 1,
@@ -66,6 +114,11 @@ const player = {
   sync: 0,
   overdrive: 0,
   turn: 0,
+  gunBonus: 0,
+  swordBonus: 0,
+  phaseCdMult: 1,
+  chipCdMult: 1,
+  syncGainMult: 1,
   chipCd: [0, 0, 0, 0],
   facing: 1,
 };
@@ -179,7 +232,7 @@ function dashPlayer() {
 
 function gainSync(amount) {
   if (amount <= 0 || gameOver) return;
-  player.sync = Math.min(100, player.sync + amount);
+  player.sync = Math.min(100, player.sync + amount * player.syncGainMult);
 }
 
 function damageEnemy(enemy, amount, knock = 0, syncGain = amount * 0.32) {
@@ -275,7 +328,7 @@ function fireGun() {
   if (player.gunCd > 0 || gameOver) return;
   player.gunCd = player.overdrive > 0 ? 0.1 : 0.18;
   const p = cellCenter(player.col, player.row);
-  shots.push({ x: p.x + player.facing * 34, y: p.y, vx: player.facing * 720, damage: 10, team: "player", pierce: 0, r: 7, hit: new Set() });
+  shots.push({ x: p.x + player.facing * 34, y: p.y, vx: player.facing * 720, damage: 10 + player.gunBonus, team: "player", pierce: 0, r: 7, hit: new Set() });
   sparks.push({ x: p.x + player.facing * 24, y: p.y, t: 0.08, color: "#46e4ff" });
   playTone(510, 0.035, "square", 0.018);
 }
@@ -285,7 +338,7 @@ function swingSword() {
   const col = player.col + player.facing;
   if (!inBounds(col, player.row)) return;
   player.swordCd = player.overdrive > 0 ? 0.24 : 0.38;
-  slashes.push({ col, row: player.row, t: 0.16, damage: 34, knock: player.facing });
+  slashes.push({ col, row: player.row, t: 0.16, damage: 34 + player.swordBonus, knock: player.facing });
   message = "EDGE STRIKE";
   playTone(760, 0.06, "triangle", 0.045);
 }
@@ -306,7 +359,7 @@ function phaseShift() {
   if (player.phaseCd > 0 || gameOver) return;
   const targetCol = findPhaseTarget();
   if (targetCol === null) {
-    player.phaseCd = 0.35;
+    player.phaseCd = 0.35 * player.phaseCdMult;
     message = "PHASE BLOCKED";
     playTone(110, 0.06, "triangle", 0.018);
     return;
@@ -324,7 +377,7 @@ function phaseShift() {
   player.col = targetCol;
   player.facing = dir;
   player.dash = 0.18;
-  player.phaseCd = isOverclock ? 1.05 : 2.4;
+  player.phaseCd = (isOverclock ? 1.05 : 2.4) * player.phaseCdMult;
   pulses.push({ row, from: left, to: right, t: pulseT, max: pulseT, overclock: isOverclock });
 
   for (const enemy of enemies) {
@@ -350,13 +403,13 @@ function phaseShift() {
 function useChip(i) {
   if (player.chipCd[i] > 0 || gameOver) return;
   if (i === 0) {
-    player.chipCd[i] = chips[i].cooldown;
+    player.chipCd[i] = chips[i].cooldown * player.chipCdMult;
     const p = cellCenter(player.col, player.row);
     shots.push({ x: p.x + player.facing * 36, y: p.y, vx: player.facing * 1120, damage: 24, team: "player", pierce: 4, r: 10, beam: true, hit: new Set() });
     message = "LiDAR SWEEP";
     playTone(620, 0.08, "sawtooth", 0.042);
   } else if (i === 1) {
-    player.chipCd[i] = chips[i].cooldown;
+    player.chipCd[i] = chips[i].cooldown * player.chipCdMult;
     const col = player.col + player.facing;
     for (let row = player.row - 1; row <= player.row + 1; row++) {
       if (inBounds(col, row)) zones.push({ col, row, t: 1.2, tick: row === player.row ? 0 : 0.08, damage: 9, jam: false });
@@ -364,7 +417,7 @@ function useChip(i) {
     message = "ARC SNARE";
     playTone(420, 0.09, "sine", 0.038);
   } else if (i === 2) {
-    player.chipCd[i] = chips[i].cooldown;
+    player.chipCd[i] = chips[i].cooldown * player.chipCdMult;
     player.dash = 0.16;
     const startCol = player.col;
     const startRow = player.row;
@@ -375,13 +428,13 @@ function useChip(i) {
     addClone(player.col, Math.max(0, player.row - 1), 0.9);
     addClone(player.col, Math.min(grid.rows - 1, player.row + 1), 0.9);
     if (inBounds(player.col + player.facing, player.row)) {
-      slashes.push({ col: player.col + player.facing, row: player.row, t: 0.16, damage: 36, knock: player.facing });
+      slashes.push({ col: player.col + player.facing, row: player.row, t: 0.16, damage: 36 + Math.floor(player.swordBonus * 0.5), knock: player.facing });
     }
     message = "VECTOR CLONE";
     shake = 7;
     playTone(360, 0.07, "square", 0.035);
   } else if (i === 3) {
-    player.chipCd[i] = chips[i].cooldown;
+    player.chipCd[i] = chips[i].cooldown * player.chipCdMult;
     for (const enemy of enemies) {
       enemy.dirJam = 3.0;
       enemy.cd += 0.45 + Math.random() * 0.35;
@@ -628,19 +681,66 @@ function updateAreaEffects(dt) {
   }
 }
 
+function pickUpgradeChoices() {
+  const pool = [...upgradePool];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, 3);
+}
+
+function openUpgradeSelection() {
+  pendingWave = wave + 1;
+  upgradeChoices = pickUpgradeChoices();
+  upgradePending = true;
+  message = `WAVE ${wave} CLEAR`;
+  player.hp = Math.min(player.maxHp, player.hp + 10);
+  playTone(540, 0.08, "triangle", 0.035);
+}
+
+function spawnWaveEnemies(level) {
+  spawnRandomEnemy("charger");
+  spawnRandomEnemy("turret");
+  if (level >= 2) spawnRandomEnemy("worker");
+  if (level % 2 === 0) spawnRandomEnemy("charger");
+  if (level >= 4) spawnRandomEnemy("turret");
+  if (level >= 5) spawnRandomEnemy("worker");
+}
+
+function selectUpgrade(index) {
+  const choice = upgradeChoices[index];
+  if (!upgradePending || !choice) return;
+  choice.apply();
+  upgradePending = false;
+  upgradeChoices = [];
+  wave = pendingWave;
+  spawnTimer = 0.6;
+  shots.length = 0;
+  slashes.length = 0;
+  zones.length = 0;
+  hazards.length = 0;
+  clones.length = 0;
+  pulses.length = 0;
+  message = `${choice.title} INSTALLED`;
+  spawnWaveEnemies(wave);
+  shake = Math.max(shake, 5);
+  playTone(660, 0.09, "square", 0.034);
+}
+
+function updateUpgradeInput() {
+  if (pressed.has("1")) selectUpgrade(0);
+  if (pressed.has("2")) selectUpgrade(1);
+  if (pressed.has("3")) selectUpgrade(2);
+}
+
 function updateWave(dt) {
   for (let i = enemies.length - 1; i >= 0; i--) {
     if (enemies[i].hp <= 0) enemies.splice(i, 1);
   }
   spawnTimer -= dt;
-  if (enemies.length === 0 && spawnTimer <= 0) {
-    wave += 1;
-    spawnTimer = 0.5;
-    spawnRandomEnemy("charger");
-    spawnRandomEnemy("turret");
-    if (wave >= 2) spawnRandomEnemy("worker");
-    if (wave % 2 === 0) spawnRandomEnemy("charger");
-    message = `WAVE ${wave}`;
+  if (enemies.length === 0 && spawnTimer <= 0 && !upgradePending) {
+    openUpgradeSelection();
   }
 }
 
@@ -673,6 +773,14 @@ function update(dt) {
   }
   shake = Math.max(0, shake - dt * 30);
   if (gameOver) {
+    hpEl.textContent = `HP ${Math.ceil(player.hp)}`;
+    waveEl.textContent = `WAVE ${wave}`;
+    if (syncEl) syncEl.textContent = player.overdrive > 0 ? "SYNC OVR" : `SYNC ${Math.floor(player.sync)}`;
+    pressed.clear();
+    return;
+  }
+  if (upgradePending) {
+    updateUpgradeInput();
     hpEl.textContent = `HP ${Math.ceil(player.hp)}`;
     waveEl.textContent = `WAVE ${wave}`;
     if (syncEl) syncEl.textContent = player.overdrive > 0 ? "SYNC OVR" : `SYNC ${Math.floor(player.sync)}`;
@@ -1098,6 +1206,7 @@ function drawOverlay() {
 
   for (let i = 0; i < 4; i++) {
     const x = 430 + i * 122;
+    const cooldown = chips[i].cooldown * player.chipCdMult;
     ctx.fillStyle = "#0c171c";
     ctx.fillRect(x, 26, 104, 30);
     ctx.strokeStyle = player.chipCd[i] > 0 ? "#526772" : "#46e4ff";
@@ -1107,8 +1216,12 @@ function drawOverlay() {
     ctx.fillText(`${i + 1} ${chips[i].label}`, x + 9, 46);
     if (player.chipCd[i] > 0) {
       ctx.fillStyle = "rgba(0,0,0,0.55)";
-      ctx.fillRect(x, 26, 104 * Math.min(1, player.chipCd[i] / chips[i].cooldown), 30);
+      ctx.fillRect(x, 26, 104 * Math.min(1, player.chipCd[i] / cooldown), 30);
     }
+  }
+
+  if (upgradePending) {
+    drawUpgradeOverlay();
   }
 
   if (gameOver) {
@@ -1125,6 +1238,50 @@ function drawOverlay() {
   }
 }
 
+function drawUpgradeOverlay() {
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.70)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = "#e8f7f8";
+  ctx.font = "800 34px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("FIELD UPGRADE", W / 2, 142);
+  ctx.fillStyle = "#8fa7ad";
+  ctx.font = "700 15px system-ui";
+  ctx.fillText(`Wave ${wave} clear. Choose a module for Wave ${pendingWave}.`, W / 2, 172);
+
+  const cardW = 250;
+  const cardH = 138;
+  const startX = W / 2 - cardW * 1.5 - 18;
+  for (let i = 0; i < upgradeChoices.length; i++) {
+    const x = startX + i * (cardW + 18);
+    const y = 220;
+    ctx.fillStyle = "rgba(12, 23, 28, 0.94)";
+    ctx.fillRect(x, y, cardW, cardH);
+    ctx.strokeStyle = i === 0 ? "#7dff91" : i === 1 ? "#46e4ff" : "#ffd35a";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(x + 0.5, y + 0.5, cardW - 1, cardH - 1);
+
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.font = "800 16px system-ui";
+    ctx.textAlign = "left";
+    ctx.fillText(`${i + 1}`, x + 18, y + 30);
+    ctx.fillStyle = "#e8f7f8";
+    ctx.font = "800 20px system-ui";
+    ctx.fillText(upgradeChoices[i].title, x + 48, y + 34);
+    ctx.fillStyle = "#b6c9ce";
+    ctx.font = "700 15px system-ui";
+    ctx.fillText(upgradeChoices[i].detail, x + 18, y + 76);
+    ctx.fillStyle = "#526772";
+    ctx.font = "700 12px system-ui";
+    ctx.fillText("Press key or tap chip slot", x + 18, y + 112);
+  }
+
+  ctx.textAlign = "left";
+  ctx.restore();
+}
+
 function loop(now) {
   const dt = Math.min(0.033, (now - lastTime) / 1000);
   lastTime = now;
@@ -1136,6 +1293,7 @@ function loop(now) {
 function restart() {
   player.col = 1;
   player.row = 3;
+  player.maxHp = 100;
   player.hp = player.maxHp;
   player.invuln = 0;
   player.gunCd = 0;
@@ -1144,6 +1302,11 @@ function restart() {
   player.sync = 0;
   player.overdrive = 0;
   player.turn = 0;
+  player.gunBonus = 0;
+  player.swordBonus = 0;
+  player.phaseCdMult = 1;
+  player.chipCdMult = 1;
+  player.syncGainMult = 1;
   player.chipCd = [0, 0, 0, 0];
   player.facing = 1;
   const p = cellCenter(player.col, player.row);
@@ -1159,6 +1322,10 @@ function restart() {
   enemies.length = 0;
   obstacles.splice(0, obstacles.length, { col: 2, row: 2, hp: 45, flash: 0 }, { col: 3, row: 4, hp: 45, flash: 0 });
   wave = 1;
+  nextEnemyId = 1;
+  pendingWave = 1;
+  upgradePending = false;
+  upgradeChoices = [];
   gameOver = false;
   message = "SYSTEM ONLINE";
   spawnEnemy("charger", 4, 1);
@@ -1181,6 +1348,13 @@ window.addEventListener("keyup", (event) => {
 
 function performTouchAction(action) {
   armAudio();
+  if (upgradePending) {
+    if (action === "chip0") selectUpgrade(0);
+    if (action === "chip1") selectUpgrade(1);
+    if (action === "chip2") selectUpgrade(2);
+    if (action === "restart") restart();
+    return;
+  }
   if (gameOver && action !== "restart") return;
   if (action === "up") tryMove(0, -1);
   if (action === "down") tryMove(0, 1);
