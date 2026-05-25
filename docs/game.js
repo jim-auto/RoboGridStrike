@@ -4,6 +4,7 @@ const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
 const hpEl = document.getElementById("hp");
 const waveEl = document.getElementById("wave");
+const syncEl = document.getElementById("sync");
 const touchButtons = document.querySelectorAll("[data-action]");
 
 const W = canvas.width;
@@ -23,6 +24,7 @@ const shots = [];
 const slashes = [];
 const zones = [];
 const clones = [];
+const pulses = [];
 const sparks = [];
 const enemies = [];
 const obstacles = [
@@ -57,6 +59,9 @@ const player = {
   dash: 0,
   gunCd: 0,
   swordCd: 0,
+  phaseCd: 0,
+  sync: 0,
+  overdrive: 0,
   chipCd: [0, 0, 0, 0],
   facing: 1,
 };
@@ -155,7 +160,13 @@ function dashPlayer() {
   playTone(220, 0.035, "triangle", 0.016);
 }
 
-function damageEnemy(enemy, amount, knock = 0) {
+function gainSync(amount) {
+  if (amount <= 0 || gameOver) return;
+  player.sync = Math.min(100, player.sync + amount);
+}
+
+function damageEnemy(enemy, amount, knock = 0, syncGain = amount * 0.32) {
+  const wasAlive = enemy.hp > 0;
   enemy.hp -= amount;
   enemy.flash = 0.12;
   enemy.stun = Math.max(enemy.stun, 0.08);
@@ -170,6 +181,7 @@ function damageEnemy(enemy, amount, knock = 0) {
   shake = Math.max(shake, 8);
   sparks.push({ x: enemy.px, y: enemy.py, t: 0.18, color: "#ffd35a" });
   playTone(160, 0.045, "sawtooth", 0.035);
+  if (wasAlive) gainSync(syncGain);
 }
 
 function hurtPlayer(amount) {
@@ -204,7 +216,7 @@ function flipPlayer() {
 
 function fireGun() {
   if (player.gunCd > 0 || gameOver) return;
-  player.gunCd = 0.18;
+  player.gunCd = player.overdrive > 0 ? 0.1 : 0.18;
   const p = cellCenter(player.col, player.row);
   shots.push({ x: p.x + player.facing * 34, y: p.y, vx: player.facing * 720, damage: 10, team: "player", pierce: 0, r: 7, hit: new Set() });
   sparks.push({ x: p.x + player.facing * 24, y: p.y, t: 0.08, color: "#46e4ff" });
@@ -215,10 +227,67 @@ function swingSword() {
   if (player.swordCd > 0 || gameOver) return;
   const col = player.col + player.facing;
   if (!inBounds(col, player.row)) return;
-  player.swordCd = 0.38;
+  player.swordCd = player.overdrive > 0 ? 0.24 : 0.38;
   slashes.push({ col, row: player.row, t: 0.16, damage: 34, knock: player.facing });
   message = "EDGE STRIKE";
   playTone(760, 0.06, "triangle", 0.045);
+}
+
+function findPhaseTarget() {
+  const row = player.row;
+  const mirrorCol = grid.cols - 1 - player.col;
+  const candidates = [mirrorCol, mirrorCol + player.facing, mirrorCol - player.facing];
+  for (const col of candidates) {
+    if (col === player.col || !inBounds(col, row)) continue;
+    if (isBlocked(col, row) || isEnemyCell(col, row)) continue;
+    return col;
+  }
+  return null;
+}
+
+function phaseShift() {
+  if (player.phaseCd > 0 || gameOver) return;
+  const targetCol = findPhaseTarget();
+  if (targetCol === null) {
+    player.phaseCd = 0.35;
+    message = "PHASE BLOCKED";
+    playTone(110, 0.06, "triangle", 0.018);
+    return;
+  }
+
+  const startCol = player.col;
+  const row = player.row;
+  const isOverclock = player.sync >= 100;
+  const dir = Math.sign(targetCol - startCol) || player.facing;
+  const left = Math.min(startCol, targetCol);
+  const right = Math.max(startCol, targetCol);
+  const pulseT = isOverclock ? 0.34 : 0.24;
+
+  addClone(startCol, row, 0.85);
+  player.col = targetCol;
+  player.facing = dir;
+  player.dash = 0.18;
+  player.phaseCd = isOverclock ? 1.05 : 2.4;
+  pulses.push({ row, from: left, to: right, t: pulseT, max: pulseT, overclock: isOverclock });
+
+  for (const enemy of enemies) {
+    if (enemy.row >= row - 1 && enemy.row <= row + 1 && enemy.col >= left && enemy.col <= right) {
+      damageEnemy(enemy, isOverclock ? 42 : 22, dir, isOverclock ? 0 : 7);
+      if (isOverclock) enemy.dirJam = Math.max(enemy.dirJam, 1.3);
+    }
+  }
+
+  if (isOverclock) {
+    player.sync = 0;
+    player.overdrive = 4.0;
+    message = "OVERCLOCK PHASE";
+    shake = Math.max(shake, 13);
+    playTone(740, 0.12, "sawtooth", 0.05);
+  } else {
+    message = "MIRROR PHASE";
+    shake = Math.max(shake, 8);
+    playTone(520, 0.08, "square", 0.034);
+  }
 }
 
 function useChip(i) {
@@ -272,15 +341,19 @@ function useChip(i) {
 }
 
 function updatePlayer(dt) {
-  player.gunCd = Math.max(0, player.gunCd - dt);
-  player.swordCd = Math.max(0, player.swordCd - dt);
+  const cdRate = player.overdrive > 0 ? 1.65 : 1;
+  player.gunCd = Math.max(0, player.gunCd - dt * cdRate);
+  player.swordCd = Math.max(0, player.swordCd - dt * cdRate);
+  player.phaseCd = Math.max(0, player.phaseCd - dt);
+  player.overdrive = Math.max(0, player.overdrive - dt);
   player.invuln = Math.max(0, player.invuln - dt);
   player.dash = Math.max(0, player.dash - dt);
-  player.chipCd = player.chipCd.map((v) => Math.max(0, v - dt));
+  player.chipCd = player.chipCd.map((v) => Math.max(0, v - dt * (player.overdrive > 0 ? 1.25 : 1)));
 
   if (pressed.has("q")) turnPlayer(-1);
   if (pressed.has("e")) turnPlayer(1);
   if (pressed.has("c") || pressed.has("tab")) flipPlayer();
+  if (pressed.has("f")) phaseShift();
 
   let dx = 0;
   let dy = 0;
@@ -429,6 +502,11 @@ function updateAreaEffects(dt) {
     if (clones[i].t <= 0) clones.splice(i, 1);
   }
 
+  for (const pulse of pulses) pulse.t -= dt;
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    if (pulses[i].t <= 0) pulses.splice(i, 1);
+  }
+
   for (const slash of slashes) {
     slash.t -= dt;
     for (const enemy of enemies) {
@@ -509,6 +587,9 @@ function update(dt) {
   }
   shake = Math.max(0, shake - dt * 30);
   if (gameOver) {
+    hpEl.textContent = `HP ${Math.ceil(player.hp)}`;
+    waveEl.textContent = `WAVE ${wave}`;
+    if (syncEl) syncEl.textContent = player.overdrive > 0 ? "SYNC OVR" : `SYNC ${Math.floor(player.sync)}`;
     pressed.clear();
     return;
   }
@@ -519,6 +600,7 @@ function update(dt) {
   updateWave(dt);
   hpEl.textContent = `HP ${Math.ceil(player.hp)}`;
   waveEl.textContent = `WAVE ${wave}`;
+  if (syncEl) syncEl.textContent = player.overdrive > 0 ? "SYNC OVR" : `SYNC ${Math.floor(player.sync)}`;
   pressed.clear();
 }
 
@@ -562,11 +644,12 @@ function drawEnemyTelegraphs() {
     ctx.globalAlpha = Math.max(0.2, pulse);
     if (enemy.action.type === "charge") {
       const c = cellCenter(enemy.action.col, enemy.action.row);
+      const half = grid.cell / 2;
       ctx.fillStyle = "rgba(255, 91, 110, 0.24)";
       ctx.strokeStyle = "#ff5b6e";
       ctx.lineWidth = 5;
-      ctx.fillRect(c.x - 56, c.y - 56, 112, 112);
-      ctx.strokeRect(c.x - 50, c.y - 50, 100, 100);
+      ctx.fillRect(c.x - half, c.y - half, grid.cell, grid.cell);
+      ctx.strokeRect(c.x - half + 5, c.y - half + 5, grid.cell - 10, grid.cell - 10);
       ctx.beginPath();
       ctx.moveTo(enemy.px - 28, enemy.py);
       ctx.lineTo(c.x + 28, c.y);
@@ -609,11 +692,12 @@ function draw() {
 
   for (const zone of zones) {
     const c = cellCenter(zone.col, zone.row);
+    const half = grid.cell / 2;
     ctx.fillStyle = zone.jam ? "rgba(199, 125, 255, 0.18)" : "rgba(125, 255, 145, 0.22)";
     ctx.strokeStyle = zone.jam ? "rgba(199, 125, 255, 0.82)" : "rgba(125, 255, 145, 0.8)";
     ctx.lineWidth = 4;
-    ctx.fillRect(c.x - 56, c.y - 56, 112, 112);
-    ctx.strokeRect(c.x - 50, c.y - 50, 100, 100);
+    ctx.fillRect(c.x - half, c.y - half, grid.cell, grid.cell);
+    ctx.strokeRect(c.x - half + 5, c.y - half + 5, grid.cell - 10, grid.cell - 10);
   }
 
   for (const o of obstacles) {
@@ -628,6 +712,21 @@ function draw() {
   }
 
   drawEnemyTelegraphs();
+
+  for (const pulse of pulses) {
+    const x = grid.x + pulse.from * (grid.cell + grid.gap);
+    const y = grid.y + pulse.row * (grid.cell + grid.gap);
+    const width = (pulse.to - pulse.from + 1) * grid.cell + (pulse.to - pulse.from) * grid.gap;
+    const alpha = Math.max(0, pulse.t / pulse.max);
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = pulse.overclock ? "rgba(255, 211, 90, 0.32)" : "rgba(70, 228, 255, 0.24)";
+    ctx.strokeStyle = pulse.overclock ? "#ffd35a" : "#46e4ff";
+    ctx.lineWidth = pulse.overclock ? 6 : 4;
+    ctx.fillRect(x, y, width, grid.cell);
+    ctx.strokeRect(x + 4, y + 4, width - 8, grid.cell - 8);
+    ctx.restore();
+  }
 
   for (const slash of slashes) {
     const c = cellCenter(slash.col, slash.row);
@@ -678,7 +777,7 @@ function draw() {
   }
 
   if (player.invuln <= 0 || Math.floor(performance.now() / 70) % 2 === 0) {
-    drawRobot(player.px, player.py, player.dash > 0 ? "#7dff91" : "#1d5d6e", false, 0, player.facing);
+    drawRobot(player.px, player.py, player.overdrive > 0 ? "#b38b2f" : player.dash > 0 ? "#7dff91" : "#1d5d6e", false, 0, player.facing);
   }
 
   for (const spark of sparks) {
@@ -703,6 +802,19 @@ function drawOverlay() {
   ctx.fillStyle = player.facing < 0 ? "#ffd35a" : "#7dff91";
   ctx.font = "800 14px system-ui";
   ctx.fillText(player.facing < 0 ? "DIR <" : "DIR >", 310, 49);
+
+  const phaseX = 334;
+  ctx.fillStyle = "#0c171c";
+  ctx.fillRect(phaseX, 26, 82, 30);
+  ctx.strokeStyle = player.phaseCd > 0 ? "#526772" : player.sync >= 100 ? "#ffd35a" : "#7dff91";
+  ctx.strokeRect(phaseX, 26, 82, 30);
+  ctx.fillStyle = player.phaseCd > 0 ? "#78919a" : "#e8f7f8";
+  ctx.font = "700 12px system-ui";
+  ctx.fillText(player.sync >= 100 ? "F OVER" : "F PHASE", phaseX + 8, 46);
+  if (player.phaseCd > 0) {
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.fillRect(phaseX, 26, 82 * Math.min(1, player.phaseCd / 2.4), 30);
+  }
 
   for (let i = 0; i < 4; i++) {
     const x = 430 + i * 122;
@@ -748,6 +860,9 @@ function restart() {
   player.invuln = 0;
   player.gunCd = 0;
   player.swordCd = 0;
+  player.phaseCd = 0;
+  player.sync = 0;
+  player.overdrive = 0;
   player.chipCd = [0, 0, 0, 0];
   player.facing = 1;
   const p = cellCenter(player.col, player.row);
@@ -757,6 +872,7 @@ function restart() {
   slashes.length = 0;
   zones.length = 0;
   clones.length = 0;
+  pulses.length = 0;
   sparks.length = 0;
   enemies.length = 0;
   obstacles.splice(0, obstacles.length, { col: 2, row: 2, hp: 45, flash: 0 }, { col: 3, row: 4, hp: 45, flash: 0 });
@@ -788,6 +904,7 @@ function performTouchAction(action) {
   if (action === "left") tryMove(-1, 0);
   if (action === "right") tryMove(1, 0);
   if (action === "turn") flipPlayer();
+  if (action === "phase") phaseShift();
   if (action === "dash") dashPlayer();
   if (action === "gun") fireGun();
   if (action === "sword") swingSword();
