@@ -19,6 +19,7 @@ const grid = {
   cell: 66,
   gap: 6,
 };
+const MISSION_CLEAR_WAVE = 5;
 
 const keys = new Set();
 const pressed = new Set();
@@ -91,6 +92,7 @@ let lastTime = performance.now();
 let hitstop = 0;
 let shake = 0;
 let gameOver = false;
+let missionComplete = false;
 let wave = 1;
 let spawnTimer = 0;
 let message = "SYSTEM ONLINE";
@@ -98,6 +100,14 @@ let nextEnemyId = 1;
 let upgradePending = false;
 let upgradeChoices = [];
 let pendingWave = 1;
+const runStats = {
+  startedAt: performance.now(),
+  completedAt: 0,
+  damageTaken: 0,
+  overclockUses: 0,
+  upgrades: 0,
+};
+let missionResult = null;
 
 const player = {
   col: 1,
@@ -256,6 +266,7 @@ function damageEnemy(enemy, amount, knock = 0, syncGain = amount * 0.32) {
 
 function hurtPlayer(amount) {
   if (player.invuln > 0 || gameOver) return;
+  runStats.damageTaken += Math.min(amount, player.hp);
   player.hp -= amount;
   player.invuln = 1.0;
   hitstop = 0.07;
@@ -390,6 +401,7 @@ function phaseShift() {
   if (isOverclock) {
     player.sync = 0;
     player.overdrive = 4.0;
+    runStats.overclockUses += 1;
     message = "OVERCLOCK PHASE";
     shake = Math.max(shake, 13);
     playTone(740, 0.12, "sawtooth", 0.05);
@@ -712,6 +724,7 @@ function selectUpgrade(index) {
   const choice = upgradeChoices[index];
   if (!upgradePending || !choice) return;
   choice.apply();
+  runStats.upgrades += 1;
   upgradePending = false;
   upgradeChoices = [];
   wave = pendingWave;
@@ -728,6 +741,51 @@ function selectUpgrade(index) {
   playTone(660, 0.09, "square", 0.034);
 }
 
+function formatTime(seconds) {
+  const mins = Math.floor(seconds / 60);
+  const secs = Math.floor(seconds % 60).toString().padStart(2, "0");
+  const tenths = Math.floor((seconds % 1) * 10);
+  return `${mins}:${secs}.${tenths}`;
+}
+
+function calculateRank(seconds, damageTaken, overclockUses) {
+  let score = 100;
+  score -= Math.max(0, seconds - 120) * 0.35;
+  score -= damageTaken * 0.55;
+  score += Math.min(overclockUses, 4) * 4;
+  if (score >= 92) return "S";
+  if (score >= 78) return "A";
+  if (score >= 62) return "B";
+  return "C";
+}
+
+function completeMission() {
+  if (missionComplete) return;
+  missionComplete = true;
+  upgradePending = false;
+  upgradeChoices = [];
+  runStats.completedAt = performance.now();
+  const seconds = Math.max(0, (runStats.completedAt - runStats.startedAt) / 1000);
+  missionResult = {
+    time: seconds,
+    timeText: formatTime(seconds),
+    damageTaken: Math.floor(runStats.damageTaken),
+    overclockUses: runStats.overclockUses,
+    upgrades: runStats.upgrades,
+    rank: calculateRank(seconds, runStats.damageTaken, runStats.overclockUses),
+  };
+  shots.length = 0;
+  slashes.length = 0;
+  zones.length = 0;
+  hazards.length = 0;
+  clones.length = 0;
+  pulses.length = 0;
+  sparks.push({ x: player.px, y: player.py, t: 0.28, color: "#7dff91" });
+  message = "MISSION COMPLETE";
+  shake = Math.max(shake, 9);
+  playTone(820, 0.16, "triangle", 0.055);
+}
+
 function updateUpgradeInput() {
   if (pressed.has("1")) selectUpgrade(0);
   if (pressed.has("2")) selectUpgrade(1);
@@ -740,7 +798,8 @@ function updateWave(dt) {
   }
   spawnTimer -= dt;
   if (enemies.length === 0 && spawnTimer <= 0 && !upgradePending) {
-    openUpgradeSelection();
+    if (wave >= MISSION_CLEAR_WAVE) completeMission();
+    else openUpgradeSelection();
   }
 }
 
@@ -772,7 +831,7 @@ function update(dt) {
     dt *= 0.08;
   }
   shake = Math.max(0, shake - dt * 30);
-  if (gameOver) {
+  if (gameOver || missionComplete) {
     hpEl.textContent = `HP ${Math.ceil(player.hp)}`;
     waveEl.textContent = `WAVE ${wave}`;
     if (syncEl) syncEl.textContent = player.overdrive > 0 ? "SYNC OVR" : `SYNC ${Math.floor(player.sync)}`;
@@ -1224,6 +1283,10 @@ function drawOverlay() {
     drawUpgradeOverlay();
   }
 
+  if (missionComplete) {
+    drawMissionCompleteOverlay();
+  }
+
   if (gameOver) {
     ctx.fillStyle = "rgba(0,0,0,0.68)";
     ctx.fillRect(0, 0, W, H);
@@ -1236,6 +1299,45 @@ function drawOverlay() {
     ctx.fillText("Press R to reboot combat simulation", W / 2, H / 2 + 30);
     ctx.textAlign = "left";
   }
+}
+
+function drawMissionCompleteOverlay() {
+  if (!missionResult) return;
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.72)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.fillStyle = "#7dff91";
+  ctx.font = "900 42px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("MISSION COMPLETE", W / 2, 135);
+  ctx.fillStyle = "#e8f7f8";
+  ctx.font = "800 72px system-ui";
+  ctx.fillText(`RANK ${missionResult.rank}`, W / 2, 226);
+
+  const x = W / 2 - 190;
+  const y = 278;
+  const rows = [
+    ["Clear Time", missionResult.timeText],
+    ["Damage Taken", String(missionResult.damageTaken)],
+    ["Overclocks", String(missionResult.overclockUses)],
+    ["Modules", String(missionResult.upgrades)],
+  ];
+  ctx.textAlign = "left";
+  ctx.font = "800 18px system-ui";
+  for (let i = 0; i < rows.length; i++) {
+    const rowY = y + i * 34;
+    ctx.fillStyle = "#8fa7ad";
+    ctx.fillText(rows[i][0], x, rowY);
+    ctx.fillStyle = "#e8f7f8";
+    ctx.fillText(rows[i][1], x + 230, rowY);
+  }
+
+  ctx.fillStyle = "#ffd35a";
+  ctx.font = "800 17px system-ui";
+  ctx.textAlign = "center";
+  ctx.fillText("Press R to reboot the mission", W / 2, 455);
+  ctx.restore();
 }
 
 function drawUpgradeOverlay() {
@@ -1322,11 +1424,21 @@ function restart() {
   enemies.length = 0;
   obstacles.splice(0, obstacles.length, { col: 2, row: 2, hp: 45, flash: 0 }, { col: 3, row: 4, hp: 45, flash: 0 });
   wave = 1;
+  spawnTimer = 0;
+  hitstop = 0;
+  shake = 0;
   nextEnemyId = 1;
   pendingWave = 1;
   upgradePending = false;
   upgradeChoices = [];
   gameOver = false;
+  missionComplete = false;
+  missionResult = null;
+  runStats.startedAt = performance.now();
+  runStats.completedAt = 0;
+  runStats.damageTaken = 0;
+  runStats.overclockUses = 0;
+  runStats.upgrades = 0;
   message = "SYSTEM ONLINE";
   spawnEnemy("charger", 4, 1);
   spawnEnemy("worker", 5, 3);
@@ -1348,6 +1460,10 @@ window.addEventListener("keyup", (event) => {
 
 function performTouchAction(action) {
   armAudio();
+  if (missionComplete) {
+    if (action === "restart") restart();
+    return;
+  }
   if (upgradePending) {
     if (action === "chip0") selectUpgrade(0);
     if (action === "chip1") selectUpgrade(1);

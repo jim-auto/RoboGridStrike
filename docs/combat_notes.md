@@ -15,6 +15,7 @@
 - Localization Jam corrupts enemy targeting and creates short-lived jam zones.
 - Road Worker enemies paint temporary work-lane hazards across the shared board.
 - Clearing a wave opens a 3-choice upgrade draft before the next wave starts.
+- Clearing Wave 5 completes the mission and shows time, damage, overclock count, module count, and rank.
 
 ## Implemented Feedback
 
@@ -25,5 +26,6 @@
 - Enemy HP bars and player invulnerability flicker.
 - SYNC status and Phase cooldown are visible in the HUD.
 - Upgrade cards show between waves and can be chosen with number keys or touch chip slots.
+- Mission result screen shows an S/A/B/C rank.
 - Enemy windups show charge danger tiles and turret firing lines before attacks.
 - Mobile touch controls support movement, turn, phase, dash, gun, sword, chips, and reboot.

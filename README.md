@@ -2,6 +2,8 @@
 
 Realtime grid strategy action prototype with robotics and cyber-infrastructure motifs.
 
+Clear Wave 5 to complete the current mission and receive a performance rank.
+
 ## Play Locally
 
 Open `docs/index.html` in a browser.

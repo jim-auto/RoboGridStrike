@@ -7,6 +7,7 @@
 - Controls: WASD/Arrows, Q/E in-place turn, C/Tab flip, F phase, Space/Shift dash, J/Z gun, K/X sword, 1-4 chips.
 - Implemented command system: Mirror Phase and SYNC-powered Overclock Phase.
 - Implemented progression: wave-clear 3-choice upgrade draft.
+- Implemented mission goal: Wave 5 clear result screen with performance rank.
 - Implemented chips: LiDAR Sweep, Arc Snare, Vector Clone, Localization Jam.
 - Implemented enemies: charger, turret, and road worker.
 
