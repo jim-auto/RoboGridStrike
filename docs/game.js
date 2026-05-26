@@ -8,6 +8,8 @@ const syncEl = document.getElementById("sync");
 const touchButtons = document.querySelectorAll("[data-action]");
 const heroArt = new Image();
 heroArt.src = "./assets/maintenance-robot.jpg";
+const wardenArt = new Image();
+wardenArt.src = "./assets/signal-warden.jpg";
 
 const W = canvas.width;
 const H = canvas.height;
@@ -982,6 +984,24 @@ function drawHeroArt() {
   ctx.restore();
 }
 
+function drawWardenArt() {
+  if (!wardenArt.complete || wardenArt.naturalWidth === 0) return;
+  const bossActive = enemies.some((enemy) => enemy.type === "warden" && enemy.hp > 0);
+  ctx.save();
+  ctx.globalAlpha = bossActive ? 0.9 : 0.42;
+  ctx.drawImage(wardenArt, 74, 22, 364, 724, 724, 88, 212, 422);
+  const gradient = ctx.createLinearGradient(724, 88, 936, 88);
+  gradient.addColorStop(0, "rgba(7, 16, 20, 0.86)");
+  gradient.addColorStop(0.22, "rgba(7, 16, 20, 0.16)");
+  gradient.addColorStop(1, "rgba(7, 16, 20, 0)");
+  ctx.fillStyle = gradient;
+  ctx.fillRect(724, 88, 212, 422);
+  ctx.strokeStyle = bossActive ? "rgba(255, 91, 110, 0.52)" : "rgba(142, 245, 255, 0.18)";
+  ctx.lineWidth = 1;
+  ctx.strokeRect(724.5, 88.5, 211, 421);
+  ctx.restore();
+}
+
 function drawRobot(x, y, color, enemy = false, flash = 0, dir = 1, turn = 0) {
   ctx.save();
   ctx.translate(x, y);
@@ -1236,6 +1256,7 @@ function draw() {
   }
 
   drawHeroArt();
+  drawWardenArt();
   drawGrid();
 
   for (const zone of zones) {

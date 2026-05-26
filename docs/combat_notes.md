@@ -24,6 +24,7 @@
 - Screen shake on heavy impacts and damage.
 - Basic WebAudio tones for attack and damage feedback.
 - Player battle sprite now matches the maintenance robot art direction.
+- Player and Signal Warden side art frame the battlefield.
 - Enemy HP bars and player invulnerability flicker.
 - SYNC status and Phase cooldown are visible in the HUD.
 - Upgrade cards show between waves and can be chosen with number keys or touch chip slots.
