@@ -93,6 +93,7 @@ let audioCtx = null;
 let lastTime = performance.now();
 let hitstop = 0;
 let shake = 0;
+let titleScreen = true;
 let gameOver = false;
 let missionComplete = false;
 let wave = 1;
@@ -147,6 +148,19 @@ function init() {
   player.px = p.x;
   player.py = p.y;
   enemies.length = 0;
+  message = "MISSION STANDBY";
+}
+
+function startMission() {
+  if (!titleScreen) return;
+  titleScreen = false;
+  runStats.startedAt = performance.now();
+  runStats.completedAt = 0;
+  runStats.damageTaken = 0;
+  runStats.overclockUses = 0;
+  runStats.upgrades = 0;
+  pressed.clear();
+  message = "SYSTEM ONLINE";
   spawnEnemy("charger", 4, 1);
   spawnEnemy("worker", 5, 3);
   spawnEnemy("turret", 5, 5);
@@ -924,6 +938,13 @@ function update(dt) {
     dt *= 0.08;
   }
   shake = Math.max(0, shake - dt * 30);
+  if (titleScreen) {
+    hpEl.textContent = `HP ${Math.ceil(player.hp)}`;
+    waveEl.textContent = "WAVE 1";
+    if (syncEl) syncEl.textContent = "SYNC 0";
+    pressed.clear();
+    return;
+  }
   if (gameOver || missionComplete) {
     hpEl.textContent = `HP ${Math.ceil(player.hp)}`;
     waveEl.textContent = `WAVE ${wave}`;
@@ -1458,6 +1479,10 @@ function drawOverlay() {
 
   drawBossOverlay();
 
+  if (titleScreen) {
+    drawTitleOverlay();
+  }
+
   if (upgradePending) {
     drawUpgradeOverlay();
   }
@@ -1478,6 +1503,44 @@ function drawOverlay() {
     ctx.fillText("Press R to reboot combat simulation", W / 2, H / 2 + 30);
     ctx.textAlign = "left";
   }
+}
+
+function drawTitleOverlay() {
+  ctx.save();
+  ctx.fillStyle = "rgba(0, 0, 0, 0.62)";
+  ctx.fillRect(0, 0, W, H);
+
+  ctx.textAlign = "center";
+  ctx.fillStyle = "#e8f7f8";
+  ctx.font = "900 56px system-ui";
+  ctx.fillText("RoboGridStrike", W / 2, 168);
+  ctx.fillStyle = "#8fa7ad";
+  ctx.font = "800 16px system-ui";
+  ctx.fillText("6x6 Infrastructure Combat Mission", W / 2, 198);
+
+  const buttonX = W / 2 - 128;
+  const buttonY = 250;
+  const buttonW = 256;
+  const buttonH = 58;
+  const pulse = 0.7 + Math.sin(performance.now() / 180) * 0.18;
+  ctx.fillStyle = "rgba(12, 23, 28, 0.96)";
+  ctx.fillRect(buttonX, buttonY, buttonW, buttonH);
+  ctx.strokeStyle = `rgba(125, 255, 145, ${pulse})`;
+  ctx.lineWidth = 3;
+  ctx.strokeRect(buttonX + 0.5, buttonY + 0.5, buttonW - 1, buttonH - 1);
+  ctx.fillStyle = "#7dff91";
+  ctx.font = "900 22px system-ui";
+  ctx.fillText("START MISSION", W / 2, buttonY + 37);
+
+  ctx.fillStyle = "#e8f7f8";
+  ctx.font = "800 14px system-ui";
+  ctx.fillText("ENTER / SPACE / TAP", W / 2, buttonY + 92);
+
+  ctx.fillStyle = "#8fa7ad";
+  ctx.font = "700 13px system-ui";
+  ctx.fillText("Move  Turn  Phase  Gun  Sword  Chips", W / 2, 438);
+  ctx.textAlign = "left";
+  ctx.restore();
 }
 
 function drawBossOverlay() {
@@ -1633,6 +1696,7 @@ function restart() {
   pendingWave = 1;
   upgradePending = false;
   upgradeChoices = [];
+  titleScreen = false;
   gameOver = false;
   missionComplete = false;
   missionResult = null;
@@ -1652,7 +1716,8 @@ window.addEventListener("keydown", (event) => {
   const key = event.key.toLowerCase();
   if (!keys.has(key)) pressed.add(key);
   keys.add(key);
-  if ([" ", "tab", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) event.preventDefault();
+  if ([" ", "enter", "tab", "arrowup", "arrowdown", "arrowleft", "arrowright"].includes(key)) event.preventDefault();
+  if (titleScreen && (key === "enter" || key === " " || key === "j" || key === "z")) startMission();
   if (key === "r") restart();
 });
 
@@ -1660,8 +1725,17 @@ window.addEventListener("keyup", (event) => {
   keys.delete(event.key.toLowerCase());
 });
 
+canvas.addEventListener("pointerdown", () => {
+  armAudio();
+  if (titleScreen) startMission();
+});
+
 function performTouchAction(action) {
   armAudio();
+  if (titleScreen) {
+    startMission();
+    return;
+  }
   if (missionComplete) {
     if (action === "restart") restart();
     return;

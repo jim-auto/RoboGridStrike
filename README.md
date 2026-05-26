@@ -19,6 +19,7 @@ The game will be served from the repository GitHub Pages URL.
 
 ## Controls
 
+- Start: `Enter` / `Space` / tap the canvas
 - Move: `WASD` / Arrow keys
 - Turn in place: `Q` left, `E` right, `C` / `Tab` flip
 - Phase: `F` mirror shift

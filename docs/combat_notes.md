@@ -20,6 +20,7 @@
 
 ## Implemented Feedback
 
+- Title screen holds the game in standby until Start Mission.
 - Hitstop on successful hits.
 - Screen shake on heavy impacts and damage.
 - Basic WebAudio tones for attack and damage feedback.
