@@ -234,6 +234,13 @@ function clampPlayer() {
 }
 
 function tryMove(dx, dy) {
+  if (dx !== 0 && dy === 0) {
+    const dir = dx > 0 ? 1 : -1;
+    if (dir !== player.facing) {
+      turnPlayer(dir);
+      return;
+    }
+  }
   if (dx > 0) player.facing = 1;
   if (dx < 0) player.facing = -1;
   const nextCol = player.col + dx;
