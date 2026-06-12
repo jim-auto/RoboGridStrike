@@ -207,6 +207,7 @@ function spawnEnemy(type, col, row) {
     stun: 0,
     flash: 0,
     dirJam: 0,
+    scanned: 0,
     facing: -1,
     pattern: 0,
   });
@@ -501,10 +502,28 @@ function useChip(i) {
   if (player.chipCd[i] > 0 || gameOver) return;
   if (i === 0) {
     player.chipCd[i] = chips[i].cooldown * player.chipCdMult;
-    const p = cellCenter(player.col, player.row);
-    shots.push({ x: p.x + player.facing * 36, y: p.y, vx: player.facing * 1120, damage: 24, team: "player", pierce: 4, r: 10, beam: true, hit: new Set() });
-    message = "LiDAR SWEEP";
-    playTone(620, 0.08, "sawtooth", 0.042);
+    const dir = player.facing;
+    const from = player.col + dir;
+    const to = dir > 0 ? grid.cols - 1 : 0;
+    const left = Math.min(from, to);
+    const right = Math.max(from, to);
+    let tagged = 0;
+    for (const enemy of enemies) {
+      if (enemy.col < left || enemy.col > right || Math.abs(enemy.row - player.row) > 1) continue;
+      enemy.scanned = 2.4;
+      tagged += 1;
+      sparks.push({ x: enemy.px, y: enemy.py, t: 0.24, color: "#7dff91" });
+    }
+    for (const o of obstacles) {
+      if (o.hp <= 0 || o.col < left || o.col > right || Math.abs(o.row - player.row) > 1) continue;
+      o.flash = 0.35;
+    }
+    gainSync(tagged > 0 ? tagged * 9 + 5 : 6);
+    for (let row = Math.max(0, player.row - 1); row <= Math.min(grid.rows - 1, player.row + 1); row++) {
+      pulses.push({ row, from: left, to: right, t: 0.26, max: 0.26, scan: true });
+    }
+    message = tagged > 0 ? `LiDAR SWEEP x${tagged}` : "LiDAR SWEEP";
+    playTone(520, 0.09, "sine", 0.032);
   } else if (i === 1) {
     player.chipCd[i] = chips[i].cooldown * player.chipCdMult;
     const col = player.col + player.facing;
@@ -593,6 +612,7 @@ function updateEnemies(dt) {
     enemy.stun = Math.max(0, enemy.stun - dt);
     enemy.flash = Math.max(0, enemy.flash - dt);
     enemy.dirJam = Math.max(0, enemy.dirJam - dt);
+    enemy.scanned = Math.max(0, enemy.scanned - dt);
     if (enemy.stun > 0) continue;
 
     if (enemy.windup > 0) {
@@ -1213,6 +1233,7 @@ function drawEnemyTelegraphs() {
     const pulse = 0.45 + Math.sin(performance.now() / 38) * 0.18;
     ctx.save();
     ctx.globalAlpha = Math.max(0.2, pulse);
+    if (enemy.scanned > 0) ctx.globalAlpha = Math.max(0.55, pulse);
     if (enemy.action.type === "charge") {
       const c = cellCenter(enemy.action.col, enemy.action.row);
       const half = grid.cell / 2;
@@ -1342,9 +1363,15 @@ function draw() {
     const alpha = Math.max(0, pulse.t / pulse.max);
     ctx.save();
     ctx.globalAlpha = alpha;
-    ctx.fillStyle = pulse.overclock ? "rgba(255, 211, 90, 0.32)" : "rgba(70, 228, 255, 0.24)";
-    ctx.strokeStyle = pulse.overclock ? "#ffd35a" : "#46e4ff";
-    ctx.lineWidth = pulse.overclock ? 6 : 4;
+    if (pulse.scan) {
+      ctx.fillStyle = "rgba(125, 255, 145, 0.22)";
+      ctx.strokeStyle = "#7dff91";
+      ctx.lineWidth = 4;
+    } else {
+      ctx.fillStyle = pulse.overclock ? "rgba(255, 211, 90, 0.32)" : "rgba(70, 228, 255, 0.24)";
+      ctx.strokeStyle = pulse.overclock ? "#ffd35a" : "#46e4ff";
+      ctx.lineWidth = pulse.overclock ? 6 : 4;
+    }
     ctx.fillRect(x, y, width, grid.cell);
     ctx.strokeRect(x + 4, y + 4, width - 8, grid.cell - 8);
     ctx.restore();
@@ -1387,6 +1414,11 @@ function draw() {
       ctx.setLineDash([5, 5]);
       ctx.strokeRect(enemy.px - 34, enemy.py - 34, 68, 68);
       ctx.setLineDash([]);
+    }
+    if (enemy.scanned > 0) {
+      ctx.strokeStyle = "#7dff91";
+      ctx.lineWidth = 3;
+      ctx.strokeRect(enemy.px - 36, enemy.py - 36, 72, 72);
     }
     ctx.fillStyle = "#22070a";
     ctx.fillRect(enemy.px - 28, enemy.py - 43, 56, 6);

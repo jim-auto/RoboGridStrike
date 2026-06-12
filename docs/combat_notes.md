@@ -9,7 +9,7 @@
 - Successful hits build SYNC; full SYNC turns the next Phase into Overclock Phase with stronger damage and faster cooldown recovery.
 - Gun is a low damage default ranged attack with short cooldown.
 - Sword is a default adjacent strike with a stronger cooldown.
-- LiDAR Sweep is a piercing forward scan beam.
+- LiDAR Sweep scans forward rows, tags enemies, and builds SYNC instead of dealing damage.
 - Arc Snare creates short-lived control zones in the facing direction.
 - Vector Clone combines fast repositioning, attack, and decoy afterimages.
 - Localization Jam corrupts enemy targeting and creates short-lived jam zones.
