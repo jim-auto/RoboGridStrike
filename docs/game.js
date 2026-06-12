@@ -642,10 +642,10 @@ function updateEnemies(dt) {
         if (enemy.action.type === "shoot") {
           const cells = forwardRowCells(enemy.col, enemy.action.row, enemy.action.dir);
           if (cells.length) {
-            hazards.push({ cells, t: 0.42, tick: 0, damage: 20, kind: "beam" });
-            shake = Math.max(shake, 8);
+            hazards.push({ cells, t: 0.3, tick: 0, damage: 13, kind: "beam", once: true });
+            shake = Math.max(shake, 5);
           }
-          enemy.cd = 1.35 + Math.random() * 0.4;
+          enemy.cd = 1.45 + Math.random() * 0.45;
           message = "TURRET LINE";
           playTone(280, 0.07, "sawtooth", 0.032);
         }
@@ -656,9 +656,9 @@ function updateEnemies(dt) {
           playTone(150, 0.08, "sawtooth", 0.026);
         }
         if (enemy.action.type === "wardenBeam") {
-          hazards.push({ cells: enemy.action.cells, t: 0.48, tick: 0, damage: 16, kind: "beam" });
+          hazards.push({ cells: enemy.action.cells, t: 0.38, tick: 0, damage: 12, kind: "beam", once: true });
           enemy.cd = 0.9;
-          shake = Math.max(shake, 9);
+          shake = Math.max(shake, 7);
           playTone(90, 0.12, "sawtooth", 0.04);
         }
         if (enemy.action.type === "wardenLane") {
@@ -699,7 +699,7 @@ function updateEnemies(dt) {
         const dir = player.col < enemy.col ? -1 : 1;
         enemy.facing = dir;
         enemy.action = { type: "shoot", row: targetRow, dir, y: cellCenter(enemy.col, targetRow).y };
-        enemy.windup = 0.52;
+        enemy.windup = 0.62;
         enemy.cd = 999;
         playTone(240, 0.035, "sine", 0.014);
       }
@@ -814,7 +814,7 @@ function updateAreaEffects(dt) {
     hazard.t -= dt;
     hazard.tick -= dt;
     if (hazard.tick <= 0) {
-      hazard.tick = 0.42;
+      hazard.tick = hazard.once ? 999 : 0.42;
       for (const cell of hazard.cells) {
         if (player.col === cell.col && player.row === cell.row) {
           hurtPlayer(hazard.damage);
