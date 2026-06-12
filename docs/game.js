@@ -373,6 +373,16 @@ function colCells(col) {
   return cells;
 }
 
+function forwardRowCells(fromCol, row, dir) {
+  const cells = [];
+  if (dir > 0) {
+    for (let col = fromCol; col < grid.cols; col++) cells.push({ col, row });
+  } else {
+    for (let col = fromCol; col >= 0; col--) cells.push({ col, row });
+  }
+  return cells;
+}
+
 function wardenBarrierCells(enemy) {
   const anchors = [
     { col: 2, row: Math.max(0, player.row - 1) },
@@ -630,10 +640,14 @@ function updateEnemies(dt) {
           playTone(120, 0.045, "sawtooth", 0.025);
         }
         if (enemy.action.type === "shoot") {
-          const p = cellCenter(enemy.col, enemy.row);
-          shots.push({ x: p.x + enemy.action.dir * 36, y: enemy.action.y, vx: enemy.action.dir * 560, damage: 12, team: "enemy", pierce: 0, r: 8, hit: new Set() });
-          enemy.cd = 1.25 + Math.random() * 0.5;
-          playTone(300, 0.04, "square", 0.018);
+          const cells = forwardRowCells(enemy.col, enemy.action.row, enemy.action.dir);
+          if (cells.length) {
+            hazards.push({ cells, t: 0.42, tick: 0, damage: 20, kind: "beam" });
+            shake = Math.max(shake, 8);
+          }
+          enemy.cd = 1.35 + Math.random() * 0.4;
+          message = "TURRET LINE";
+          playTone(280, 0.07, "sawtooth", 0.032);
         }
         if (enemy.action.type === "lane") {
           hazards.push({ cells: enemy.action.cells, t: 1.8, tick: 0, damage: 10 });
@@ -681,13 +695,11 @@ function updateEnemies(dt) {
       }
 
       if (enemy.type === "turret" && enemy.cd <= 0) {
-        const p = cellCenter(enemy.col, enemy.row);
         const targetRow = enemy.dirJam > 0 ? Math.floor(Math.random() * grid.rows) : player.row;
-        const target = cellCenter(enemy.col, targetRow);
         const dir = player.col < enemy.col ? -1 : 1;
         enemy.facing = dir;
-        enemy.action = { type: "shoot", y: target.y, dir };
-        enemy.windup = 0.42;
+        enemy.action = { type: "shoot", row: targetRow, dir, y: cellCenter(enemy.col, targetRow).y };
+        enemy.windup = 0.52;
         enemy.cd = 999;
         playTone(240, 0.035, "sine", 0.014);
       }
@@ -1248,20 +1260,22 @@ function drawEnemyTelegraphs() {
       ctx.stroke();
     }
     if (enemy.action.type === "shoot") {
+      const cells = forwardRowCells(enemy.col, enemy.action.row, enemy.action.dir);
+      ctx.fillStyle = "rgba(255, 91, 110, 0.28)";
       ctx.strokeStyle = "#ff5b6e";
       ctx.lineWidth = 5;
+      for (const cell of cells) {
+        const c = cellCenter(cell.col, cell.row);
+        const half = grid.cell / 2;
+        ctx.fillRect(c.x - half, c.y - half, grid.cell, grid.cell);
+        ctx.strokeRect(c.x - half + 5, c.y - half + 5, grid.cell - 10, grid.cell - 10);
+      }
+      ctx.strokeStyle = "#ffd35a";
+      ctx.lineWidth = 2;
       const edgeX = enemy.action.dir > 0 ? grid.x + grid.cols * (grid.cell + grid.gap) - grid.gap : grid.x;
       ctx.beginPath();
       ctx.moveTo(enemy.px + enemy.action.dir * 38, enemy.action.y);
       ctx.lineTo(edgeX, enemy.action.y);
-      ctx.stroke();
-      ctx.lineWidth = 1;
-      ctx.strokeStyle = "#ffd35a";
-      ctx.beginPath();
-      ctx.moveTo(enemy.px + enemy.action.dir * 38, enemy.action.y - 9);
-      ctx.lineTo(edgeX, enemy.action.y - 9);
-      ctx.moveTo(enemy.px + enemy.action.dir * 38, enemy.action.y + 9);
-      ctx.lineTo(edgeX, enemy.action.y + 9);
       ctx.stroke();
     }
     if (enemy.action.type === "lane") {

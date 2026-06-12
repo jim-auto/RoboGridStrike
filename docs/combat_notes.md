@@ -31,5 +31,5 @@
 - Upgrade cards show between waves and can be chosen with number keys or touch chip slots.
 - Signal Warden has a dedicated boss HP bar.
 - Mission result screen shows an S/A/B/C rank.
-- Enemy windups show charge danger tiles and turret firing lines before attacks.
+- Turret windups show a forward row line and then fire a matching beam hazard.
 - Mobile touch controls support movement, turn, phase, dash, gun, sword, chips, and reboot.
